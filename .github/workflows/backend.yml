@@ -1,0 +1,31 @@
+# 백엔드 테스트 자동화. backend/ 가 바뀐 push·PR 에서만 돈다 (FE·AI 커밋에는 붙지 않음).
+name: backend
+
+on:
+  push:
+    branches: [dev, main]
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+  pull_request:
+    branches: [dev, main]
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_ANON_KEY: ci-anon-key
+      DATABASE_URL: sqlite:///./ci.db
+      INFERENCE_BACKEND: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
