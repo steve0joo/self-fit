@@ -32,9 +32,9 @@
 ## 4. 현재 상태
 | 항목 | 상태 |
 |---|---|
-| BE 코드 | Phase 0 골격만 (`backend/app/`). 인증, 헬스체크, 질문 seed API |
+| BE 코드 | Phase 1 핵심 구현 완료 (2026-09-06, 리뷰 대기): 세션 REST 7개, WebSocket, 판정 엔진, 기본 리포트, Mock 추론, 추론 서버 HTTP 클라이언트. 테스트 33개(계약·장애 테스트 포함) 통과, GitHub Actions CI 적용 |
 | FE 연동 | 연결 확인 페이지 `/dev/connect`로 검증 완료. FE 팀이 로그인·회원가입 화면 작업 중 |
-| DB | Supabase 프로젝트 생성됨. 서비스 테이블은 아직 없음 (설계만) |
+| DB | 스키마 SQL 작성됨(`db/migrations/001_init.sql`). 로컬은 SQLite 자동 생성. Supabase 에는 아직 미적용 |
 | 추론 서버 | 코드 없음. 설계만. Docker Desktop 미설치 |
 | 모델 | 4개 모두 분석 완료, 가중치 추출 완료(임시 폴더). **실행은 아직 안 해 봄** |
 | 문서 | 기획서, Phase 0 기록, Phase 1 설계, 인수인계 문서 |

@@ -311,7 +311,7 @@ FE 리포트 화면(시선 유지율, 안정 표정 비율, 알림 횟수, 질�
 ### 6.1 FE → BE
 | 형식 | 내용 | 설명 |
 |---|---|---|
-| text | `{"type":"start"}` | 세션 시작. 서버가 `started_at` 기록, 질문 0 시작 |
+| text | `{"type":"start"}` | 세션 시작. 서버가 `started_at` 기록, 질문 0 시작. 프레임은 `start` 이후에만 처리됨 |
 | binary | JPEG bytes | 웹캠 프레임. **권장 224×224 이하, 품질 70, 3fps.** 서버가 수신 시각을 `ts_ms`로 기록 |
 | text | `{"type":"resume"}` | 재연결 시. 세션이 `running`이면 그대로 이어 감. `created`면 `start`와 동일 처리 |
 | text | `{"type":"question","index":1}` | 질문 전환. 이전 질문 `ended_at`, 새 질문 `started_at` 기록 |
@@ -321,7 +321,9 @@ FE 리포트 화면(시선 유지율, 안정 표정 비율, 알림 횟수, 질�
 ### 6.2 BE → FE
 | 내용 | 설명 |
 |---|---|
-| `{"type":"ready","session_id":"...","fps_hint":3,"frame_size_hint":224}` | 연결·인증 성공 직후 |
+| `{"type":"ready","session_id":"...","status":"created","fps_hint":3,"frame_size_hint":224}` | 연결·인증 성공 직후. `status`가 `running`이면 재연결 상황 |
+| `{"type":"started","status":"running","question_index":0}` | `start`/`resume` 처리 후 |
+| `{"type":"pong"}` | `ping` 응답 |
 | `{"type":"result","ts_ms":12345,"face_found":true,"gaze":{"yaw":-3.2,"pitch":5.1,"state":"center"},"emotion":{"top":"중립","probs":{...}},"attention":{"top":"집중","probs":{...}}}` | 프레임마다. `attention`은 버퍼가 16장 차기 전까지 `null`. FE는 표시하지 않아도 됨(디버그 오버레이용) |
 | `{"type":"event","ts_ms":15000,"event_type":"gaze_off","severity":"warn","icon":"👁️","message":"시선이 화면 밖으로 벗어났어요"}` | 판정 이벤트. FE `ToastStack` 형식과 동일한 `icon`, `message`. **표시 여부는 FE의 사용자 설정이 결정**한다. BE는 설정과 무관하게 항상 보내고 DB에 기록한다 |
 | `{"type":"question_ack","index":1}` | 질문 전환 반영 확인 |
@@ -360,23 +362,49 @@ BE는 모델을 모른다. 추론 서버를 호출하는 클라이언트 인터�
 
 ```python
 # analysis/types.py
-EMOTION_LABELS   = ["기쁨", "당황", "분노", "불안", "상처", "슬픔", "중립"]      # 모델 출력 순서 (EmotionNet 원본)
-EMOTION_USED     = {"중립", "불안", "당황", "기쁨"}                             # 서비스에서 판정에 쓰는 4종. top이 여기 없으면 "기타"
-ATTENTION_LABELS = ["집중", "졸림", "집중결핍", "집중하락", "태만"]          # Former-DFER. 인덱스 순서 확인 필요
+EMOTION_LABELS = ["기쁨", "당황", "분노", "불안", "상처", "슬픔", "중립"]  # 모델 출력 순서 (EmotionNet 원본)
+EMOTION_USED = {"중립", "불안", "당황", "기쁨"}  # 서비스에서 판정에 쓰는 4종. top이 여기 없으면 "기타"
+ATTENTION_LABELS = ["집중", "졸림", "집중결핍", "집중하락", "태만"]  # Former-DFER. 인덱스 순서 확인 필요
+
 
 @dataclass(frozen=True)
-class FaceBox:         x: int; y: int; w: int; h: int; score: float
+class FaceBox:
+    x: int
+    y: int
+    w: int
+    h: int
+    score: float
+
+
 @dataclass(frozen=True)
-class GazeResult:      yaw_deg: float; pitch_deg: float; confidence: float
+class GazeResult:
+    yaw_deg: float
+    pitch_deg: float
+    confidence: float
+
+
 @dataclass(frozen=True)
-class EmotionResult:   probs: dict[str, float]; top: str
+class EmotionResult:
+    probs: dict[str, float]
+    top: str
+
+
 @dataclass(frozen=True)
-class AttentionResult: probs: dict[str, float]; top: str; window_ts_ms: tuple[int, int]
+class AttentionResult:
+    probs: dict[str, float]
+    top: str
+    window_ts_ms: tuple[int, int]
+
+
 @dataclass(frozen=True)
 class FrameResult:
-    ts_ms: int; face_found: bool | None          # None = 추론 실패
-    face: FaceBox | None; gaze: GazeResult | None; emotion: EmotionResult | None
-    attention: AttentionResult | None            # 버퍼 미충족 시 None, 이후엔 최근 추론값
+    ts_ms: int
+    face_found: bool | None  # None = 추론 실패
+    face: FaceBox | None
+    gaze: GazeResult | None
+    emotion: EmotionResult | None
+    attention: AttentionResult | None  # 버퍼 미충족 시 None, 이후엔 최근 추론값
+
 
 # analysis/client.py
 class InferenceClient(Protocol):
@@ -464,7 +492,8 @@ AI-Hub 제공물(소스, Docker 데모 이미지 3종, README)을 모두 확인�
 
 `.env.example`에 추가:
 ```
-DATABASE_URL=postgresql+asyncpg://postgres.<ref>:<pw>@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres
+DATABASE_URL=postgresql+psycopg://postgres.<ref>:<pw>@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres
+# 비우면 로컬 SQLite(backend/dev.db)를 쓰고 앱 시작 시 테이블·seed 자동 생성 (2026-09-06 구현 시 추가: Supabase 비밀번호 없이도 FE 연동 가능)
 INFERENCE_BACKEND=mock            # mock | http
 INFERENCE_URL=http://localhost:9000   # BE와 추론 서버가 같은 노트북이면 localhost
 INFERENCE_TOKEN=<공유 시크릿>
@@ -561,7 +590,9 @@ Docker를 필수로 한 이유: 팀원 누구의 PC에서든 같은 PyTorch·CUD
 | `report_service` | 고정 로그 fixture → 기대 리포트 JSON 비교 |
 | REST | `TestClient` + Supabase 테스트용 스키마 + 인증 의존성 오버라이드 |
 | WebSocket | `TestClient.websocket_connect`로 start → 바이너리 프레임 N장 → question → end 시나리오. Mock Predictor 사용 |
-| `HttpInferenceClient` | 가짜 추론 서버(작은 FastAPI 앱)로 타임아웃·5xx 처리 검증 |
+| `HttpInferenceClient` | 가짜 추론 서버(작은 FastAPI 앱, ASGITransport)로 정상·얼굴없음·5xx·깨진 응답 파싱 검증. 타임아웃은 LiveSession 경로로 검증 (`tests/test_inference_failure.py`) |
+| 계약 테스트 | REST 응답·리포트 JSON·WS 메시지의 필드 집합을 이 문서와 대조 (`tests/test_contracts.py`). FE 가 의존하는 형태가 바뀌면 여기서 실패 |
+| CI | `.github/workflows/backend.yml`. `backend/` 변경이 있는 push·PR 에서 ruff + pytest |
 | 추론 서버 (Phase 2) | 샘플 이미지에 대해 원본 검증 스크립트와 출력 일치 확인. `scripts/bench.py`로 GPU/CPU 추론 시간 측정. `/v1/analyze` 계약 테스트 |
 
 ---
@@ -585,12 +616,12 @@ FE 담당자 확인이 필요한 결정. 답이 없으면 괄호 값으로 진�
 
 | # | 작업 | 산출물 | 완료 기준 |
 |---|---|---|---|
-| 1 | DB 기반 | `db.py`, ORM 모델, `db/migrations/001_init.sql`, questions seed | SQL 적용, seed 5개 조회 |
-| 2 | 분석 타입·클라이언트·Mock | `analysis/types.py, client.py, mock.py` | 단위 테스트 |
-| 3 | 판정 엔진 | `analysis/rules.py` | 경계 테스트 통과 |
-| 4 | 세션 REST | `routers/sessions.py`, `services/session_service.py` | 생성·조회·종료 테스트 |
-| 5 | WebSocket | `routers/ws.py`, `services/live_session.py` | 시나리오 테스트, 로그·이벤트 DB 기록 |
-| 6 | 리포트 | `services/report_service.py`, `routers/reports.py` | fixture 테스트, 5.6절 JSON |
+| 1 | DB 기반 | `db.py`, `models.py`, `db/migrations/001_init.sql`, questions seed | **완료 (2026-09-06).** SQLite 로컬 검증. Supabase 적용은 대기 |
+| 2 | 분석 타입·클라이언트·Mock | `analysis/types.py, client.py, mock.py` | **완료.** Mock 은 20초 주기 시선 이탈, 30초마다 불안, 45초마다 집중하락, 70초에 얼굴 사라짐 |
+| 3 | 판정 엔진 | `analysis/rules.py` | **완료.** 지속·쿨다운·리셋 경계 테스트 5개 통과 |
+| 4 | 세션 REST | `routers/sessions.py`, `services/session_service.py` | **완료.** 생성·목록·상세·종료·삭제·이벤트, 소유권 검사 테스트 통과 |
+| 5 | WebSocket | `routers/ws.py`, `services/live_session.py` | **완료.** start→프레임→question→end 시나리오, 중복 연결·종료 세션 거부, 잘못된 입력 시 연결 유지 테스트 통과 |
+| 6 | 리포트 | `services/report_service.py`, `routers/reports.py` | **완료 (기본).** 5.6절 구조 전부 생성. 집계값 정밀 검증 테스트는 추가 예정 |
 | 7 | FE 통합 (Mock) | FE와 함께 실제 웹캠 시연 | 토스트·리포트 확인 |
 | 8 | 추론 서버 (Phase 2) | Docker Desktop 설치(선행), `inference/` 프로젝트, Dockerfile + compose, 모델 3개 이식, `/v1/*` | `docker compose up` 후 `/v1/health`가 `cuda`, 샘플 일치 테스트, GPU 추론 시간 측정 |
 | 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | 실제 웹캠으로 토스트·리포트 확인 |
