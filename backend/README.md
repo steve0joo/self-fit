@@ -21,6 +21,13 @@ uv run pytest
 uv run ruff check .
 ```
 
+## DB
+- 기본은 로컬 SQLite(`dev.db`, git 제외). 앱 시작 시 테이블과 질문 seed 를 자동 생성하므로 바로 실행됩니다.
+- Supabase 를 쓰려면 `db/migrations/001_init.sql` 을 Supabase SQL Editor 에서 실행하고 `.env` 에 `DATABASE_URL` 을 넣습니다.
+
+## 추론
+- `INFERENCE_BACKEND=mock`(기본)이면 모델 없이 규칙적인 가짜 결과로 전체 흐름이 돕니다. Phase 2 에서 `http` 로 바꿉니다.
+
 ## 인증
 
 FE가 Supabase로 로그인해 받은 access token을 `Authorization: Bearer <token>` 으로 보내면,

@@ -5,3 +5,6 @@
 *.pyc
 htmlcov/
 .coverage
+# 로컬 SQLite 개발 DB
+*.db
+*.db-journal
