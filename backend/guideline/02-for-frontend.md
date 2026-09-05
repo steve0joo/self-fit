@@ -2,7 +2,7 @@
 
 백엔드가 설계한 API와 WebSocket 규격 중 FE가 붙여야 하는 부분을 정리했습니다. Phase 1 구현이 끝나면 이 문서대로 Mock 모드에서 전체 흐름이 동작하므로, 모델 없이도 FE 개발을 시작할 수 있습니다. 전체 명세는 `../docs/03-phase1-design.md` 5절, 6절.
 
-**현재 상태:** 아래 중 구현되어 있는 것은 로그인 토큰 검증(`/api/me`), 헬스체크, 질문 목록(`/api/questions`)입니다. 세션·WebSocket·리포트는 설계 완료, 구현 예정입니다.
+**현재 상태 (2026-09-06):** 아래 전부 **Mock 모드로 구현되어 있습니다.** 세션 생성 → WebSocket → 토스트 이벤트 → 종료 → 리포트까지 실제 서버로 붙일 수 있습니다. 모델만 가짜이고 규칙적으로 이벤트를 만듭니다(시작 후 약 3초 뒤 시선 이탈, 15초쯤 긴장 표정, 26초쯤 집중 저하, 70초쯤 얼굴 사라짐).
 
 ## 1. 준비
 ```bash
@@ -55,7 +55,7 @@ async function api(path: string, init: RequestInit = {}) {
 const ws = new WebSocket(`${API_URL.replace('http', 'ws')}/ws/sessions/${sessionId}?token=${token}`);
 ws.binaryType = 'arraybuffer';
 
-ws.onopen = () => ws.send(JSON.stringify({ type: 'start' }));
+ws.onopen = () => ws.send(JSON.stringify({ type: 'start' }));   // ready 를 받은 뒤 보내도 됨
 
 // 프레임: 캔버스에 224px로 그려서 JPEG로 보냄. 초당 3장.
 setInterval(() => {
@@ -79,7 +79,8 @@ ws.onmessage = (e) => {
 BE가 보내는 메시지:
 | type | 언제 | 내용 |
 |---|---|---|
-| `ready` | 연결 직후 | 인증 성공. `fps_hint: 3` |
+| `ready` | 연결 직후 | 인증 성공. `fps_hint: 3`, `status`(created면 start, running이면 resume 보내기) |
+| `started` | start/resume 처리 후 | `{status, question_index}`. 이 뒤부터 프레임을 보내면 됨 |
 | `event` | 판정 규칙에 걸릴 때 | `{icon, message, event_type, severity}`. 토스트가 **켜져 있으면** 그대로 띄우고, 꺼져 있으면 무시. BE는 설정과 무관하게 항상 보냄 |
 | `result` | 프레임마다 | 시선·감정·집중 수치. MVP에서는 무시해도 됨 |
 | `question_ack` | 질문 전환 반영 후 | `{index}` |
