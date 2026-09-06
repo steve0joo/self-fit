@@ -48,6 +48,8 @@ async function api(path: string, init: RequestInit = {}) {
 | 리포트 | `GET /api/sessions/{id}/report` | 아래 5절 |
 | 과거 목록 | `GET /api/sessions?limit=20&offset=0` | `{items:[...], total}` |
 
+**살아 있는 예제:** `frontend/app/dev/interview/page.tsx` (`http://localhost:3000/dev/interview`). 세션 생성 → WebSocket → 웹캠 프레임 전송 → 토스트 → 질문 전환 → 종료 → 리포트 JSON까지 한 페이지에 있습니다. 붙일 때 이 코드를 복사해 쓰셔도 됩니다. 디자인 없이 기능만 있는 개발용 페이지라 통합 후 지워도 됩니다.
+
 ## 4. WebSocket
 브라우저 WebSocket은 헤더를 못 붙이므로 토큰은 쿼리로 보냅니다.
 
