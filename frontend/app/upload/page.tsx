@@ -36,7 +36,7 @@ export default function UploadPage() {
     <div className="page-shell">
       <Link className="page-back" href="/">← 홈으로</Link>
       <h1 className="page-title">영상 업로드 분석</h1>
-      <p className="page-sub">이미 녹화한 면접 영상을 올리면 동일한 안구·표정 모델로 분석합니다.</p>
+      <p className="page-sub" style={{ color: 'var(--ink)' }}>이미 녹화한 면접 영상을 올리면 동일한 안구, 표정 모델로 분석합니다.</p>
 
       <div className="upload-box" onClick={() => inputRef.current?.click()}>
         <div style={{ fontSize: 28 }}>🎬</div>

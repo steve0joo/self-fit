@@ -1,9 +1,5 @@
 'use client';
 
-// 개발용 면접 테스트 페이지. BE 의 세션·WebSocket·토스트·리포트를 실제 웹캠으로 확인한다.
-// 서비스 화면이 아니며, 오가는 JSON 을 그대로 보여 주는 것이 목적. FE 통합 후 지워도 된다.
-// 규격: backend/guideline/02-for-frontend.md
-
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
@@ -43,14 +39,12 @@ export default function DevInterviewPage() {
 
   const push = (line: string) => setLog((l) => [line, ...l].slice(0, 30));
 
-  // 로그인 세션
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setAuth(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setAuth(s));
     return () => sub.subscription.unsubscribe();
   }, [supabase]);
 
-  // 웹캠
   useEffect(() => {
     let stream: MediaStream | null = null;
     navigator.mediaDevices?.getUserMedia({ video: { width: 640, height: 480 } })
@@ -70,7 +64,6 @@ export default function DevInterviewPage() {
     return r.status === 204 ? null : r.json();
   };
 
-  // 1) 세션 생성
   const createSession = async () => {
     setErr(null); setReport(null); setLog([]); setSent(0);
     try {
@@ -80,7 +73,6 @@ export default function DevInterviewPage() {
     } catch (e) { setErr(String(e)); }
   };
 
-  // 2) WebSocket 연결 + start
   const start = () => {
     if (!sessionId || !auth) return;
     const url = `${API_URL.replace(/^http/, 'ws')}/ws/sessions/${sessionId}?token=${auth.access_token}`;
@@ -124,7 +116,6 @@ export default function DevInterviewPage() {
     };
   };
 
-  // 3) 프레임 전송: 캔버스에 224px 로 그려 JPEG 로 보냄
   const startFrames = () => {
     stopFrames();
     timerRef.current = window.setInterval(() => {

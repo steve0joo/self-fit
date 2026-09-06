@@ -1,5 +1,9 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { getSupabase } from '@/lib/supabase';
 
 interface StatCard {
   figure: string;
@@ -20,7 +24,7 @@ const WHY_STATS: StatCard[] = [
   { figure: '21.7', unit: '%', desc: <>현재 채용 과정에서<br />AI를 활용 중인 기업 비율</>, dotColor: 'var(--blue)', tag: '고용노동부, 2025 기업 채용동향조사' },
   { figure: '74.5', unit: '%', desc: <>향후 AI 도구 도입<br />확대를 계획 중인 기업 비율</>, dotColor: 'var(--violet)', tag: '고용노동부, 2025 기업 채용동향조사' },
   { figure: '50', unit: '만+', desc: <>표정, 감정 분석 모델 학습에<br />활용된 얼굴 이미지 건수</>, dotColor: 'var(--good)', tag: 'AI-Hub, 한국인 감정인식 위한 복합 영상' },
-  { figure: '4', unit: '개', desc: '중립, 당황, 불안, 기쁨 감정 라벨', dotColor: '#E69622', tag: 'AI-Hub' },
+  { figure: '4', unit: '개', desc: <>중립, 당황, 불안, 기쁨<br />4개의 감정 라벨</>, dotColor: '#E69622', tag: 'AI-Hub' },
 ];
 
 const DATASETS = [
@@ -45,6 +49,31 @@ const BLOBS = [
 ];
 
 const LandingPage: React.FC = () => {
+  const router = useRouter();
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    let supabase;
+    try {
+      supabase = getSupabase();
+    } catch (e) {
+      console.warn('[landing] Supabase 클라이언트를 만들 수 없습니다.', e);
+      return;
+    }
+    supabase.auth.getSession().then(({ data }) => setSignedIn(!!data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => setSignedIn(!!session));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await getSupabase().auth.signOut();
+    } catch (e) {
+      console.warn('[landing] 로그아웃 실패', e);
+    }
+    router.refresh();
+  };
+
   return (
     <>
       {BLOBS.map((b, i) => (
@@ -73,7 +102,18 @@ const LandingPage: React.FC = () => {
             <a href="#experience">체험하기</a>
           </div>
           <div className="nav-right">
-            <Link className="nav-signin" href="/login">로그인</Link>
+            {signedIn ? (
+              <button
+                className="nav-signin"
+                type="button"
+                onClick={handleSignOut}
+                style={{ background: 'none', padding: 0 }}
+              >
+                로그아웃
+              </button>
+            ) : (
+              <Link className="nav-signin" href="/login">로그인</Link>
+            )}
             <Link className="nav-cta" href="/interview">모의면접 시작</Link>
           </div>
         </nav>
@@ -131,7 +171,7 @@ const LandingPage: React.FC = () => {
 
         <section className="why-section" id="why">
           <h2>취업 준비생을 위한 면접 자가진단</h2>
-          <p className="sub">AI 채용이 빠르게 확대되는 만큼 카메라 앞 행동도 스스로 점검할 수 있어야 합니다</p>
+          <p className="sub">AI 채용이 빠르게 확대되는 만큼 카메라 앞 행동도 스스로 점검할 수 있어야 합니다.</p>
           <div className="why-grid">
             {WHY_STATS.map((s) => (
               <div className="why-card" key={`${s.figure}${s.unit}`}>
@@ -157,7 +197,11 @@ const LandingPage: React.FC = () => {
           <div className="feature-grid">
             <div className="feature-card">
               <div className="feature-visual">
-                <div className="mini-gaze"><div className="mini-box" /><div className="mini-dot" /></div>
+                <img
+                  src="/feature-gaze.png"
+                  alt="디스플레이 중심의 시선 추적을 나타낸 일러스트"
+                  style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 8 }}
+                />
               </div>
               <h3>실시간 시선 추적</h3>
               <p>디스플레이 중심 안구 움직임 데이터로 학습한 모델이<br />시선 방향과 이탈 여부를 프레임 단위로 판정합니다.</p>
@@ -210,7 +254,7 @@ const LandingPage: React.FC = () => {
         <section className="track-section" id="track">
           <div className="feature-head">
             <h2><span className="grad">실시간 탐지</span>, 영상 분석</h2>
-            <p>지금 웹캠으로 진행하거나 이미 녹화한 영상을 올려도 같은 방식으로 분석합니다</p>
+            <p>지금 웹캠으로 진행하거나 이미 녹화한 영상을 올려도 같은 방식으로 분석합니다.</p>
           </div>
 
           <div className="track-block">
@@ -221,10 +265,11 @@ const LandingPage: React.FC = () => {
               <Link className="track-link" href="/interview">면접 시작하기 →</Link>
             </div>
             <div className="track-visual">
-              <div className="mini-gaze" style={{ height: '100%' }}>
-                <div className="mini-box" style={{ left: '32%', top: '18%', width: '30%', height: '56%' }} />
-                <div className="mini-dot" />
-              </div>
+              <img
+                src="/track-live.png"
+                alt="면접 화면에서 시선과 표정을 실시간으로 분석하고 토스트로 알려주는 모습"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
             </div>
           </div>
 
@@ -232,7 +277,7 @@ const LandingPage: React.FC = () => {
             <div>
               <span className="track-tag">SUB</span>
               <h3>이미 녹화한 영상도 분석할 수 있어요</h3>
-              <p>면접 영상 파일을 업로드하면<br />동일한 모델들로 분석해 행동 리포트를 제공합니다.</p>
+              <p>이미 녹화한 면접 영상을 올리면<br />동일한 안구, 표정 모델로 분석합니다.</p>
               <Link className="track-link" href="/upload">영상 업로드하기 →</Link>
             </div>
             <div className="track-visual">

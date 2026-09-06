@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ToastStack, { ToastItem } from '../components/ToastStack';
+import { apiFetch, getWsUrl } from '@/lib/api';
+import { getSupabase } from '@/lib/supabase';
 
 const QUESTIONS = [
   '1분간 자기소개를 해주세요.',
@@ -20,14 +22,193 @@ const TOAST_POOL: { icon: string; message: string }[] = [
   { icon: '😮', message: '당황한 표정이 감지됐어요' },
 ];
 
+const FRAME_PX = 224;
+const FRAME_INTERVAL_MS = 333;
+const RECONNECT_DELAY_MS = 2000;
+const MAX_RECONNECT = 3;
+const REPORT_FALLBACK_MS = 3000;
+const TOAST_TTL_MS = 4000;
+const MOCK_TOAST_INTERVAL_MS = 5000;
+const TOAST_PREF_KEY = 'selffit:toastEnabled';
+
+function readToastPref(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(TOAST_PREF_KEY) !== 'false';
+  } catch (e) {
+    console.warn('[interview] 토스트 설정을 읽지 못했습니다.', e);
+    return true;
+  }
+}
+
+function writeToastPref(value: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(TOAST_PREF_KEY, String(value));
+  } catch (e) {
+    console.warn('[interview] 토스트 설정을 저장하지 못했습니다.', e);
+  }
+}
+
+type ApiQuestion = { id: number; text: string; sort_order: number };
+type SessionQuestion = { order_index: number; question_id: number; text: string };
+type CreatedSession = { id: string; questions?: SessionQuestion[]; ws_url?: string };
+
 let toastId = 0;
 
-export default function InterviewPage() {
+function InterviewSession() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraError, setCameraError] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [questions, setQuestions] = useState<string[]>(QUESTIONS);
+  const [live, setLive] = useState(false);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
+  const frameTimerRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const reportTimerRef = useRef<number | null>(null);
+  const retryRef = useRef(0);
+  const teardownRef = useRef(false);
+  const navigatedRef = useRef(false);
+  const [toastEnabled, setToastEnabled] = useState(true);
+  const toastEnabledRef = useRef(true);
+  toastEnabledRef.current = toastEnabled;
+
+  useEffect(() => {
+    setToastEnabled(readToastPref());
+  }, []);
+
+  const toggleToast = () => {
+    const next = !toastEnabledRef.current;
+    toastEnabledRef.current = next;
+    setToastEnabled(next);
+    writeToastPref(next);
+    if (!next) setToasts([]);
+  };
+
+  const showToast = useCallback((icon: string, message: string) => {
+    if (!toastEnabledRef.current) return;
+    const id = ++toastId;
+    setToasts((prev) => [...prev, { id, icon, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), TOAST_TTL_MS);
+  }, []);
+
+  const stopFrames = useCallback(() => {
+    if (frameTimerRef.current !== null) {
+      clearInterval(frameTimerRef.current);
+      frameTimerRef.current = null;
+    }
+  }, []);
+
+  const startFrames = useCallback(() => {
+    stopFrames();
+    frameTimerRef.current = window.setInterval(() => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ws = wsRef.current;
+      if (!video || !canvas || !ws || ws.readyState !== WebSocket.OPEN) return;
+      if (video.paused || video.ended || video.readyState < 2) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, FRAME_PX, FRAME_PX);
+      canvas.toBlob(
+        (blob) => {
+          if (blob && ws.readyState === WebSocket.OPEN) ws.send(blob);
+        },
+        'image/jpeg',
+        0.7
+      );
+    }, FRAME_INTERVAL_MS);
+  }, [stopFrames]);
+
+  const goReport = useCallback(() => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    teardownRef.current = true;
+    if (reportTimerRef.current !== null) {
+      clearTimeout(reportTimerRef.current);
+      reportTimerRef.current = null;
+    }
+    const sessionId = sessionIdRef.current;
+    router.push(sessionId ? `/interview/report?session=${sessionId}` : '/interview/report');
+  }, [router]);
+
+  const connect = useCallback(
+    (resume: boolean) => {
+      const sessionId = sessionIdRef.current;
+      const token = tokenRef.current;
+      if (!sessionId || !token || teardownRef.current) return;
+
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(getWsUrl(sessionId, token));
+      } catch (e) {
+        console.warn('[interview] WebSocket 생성 실패 — 로컬 진행으로 폴백합니다.', e);
+        return;
+      }
+      ws.binaryType = 'arraybuffer';
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setLive(true);
+        ws.send(JSON.stringify({ type: resume ? 'resume' : 'start' }));
+        startFrames();
+      };
+
+      ws.onmessage = (e) => {
+        if (typeof e.data !== 'string') return;
+        let msg: { type?: string; icon?: string; message?: string; code?: string };
+        try {
+          msg = JSON.parse(e.data);
+        } catch {
+          return;
+        }
+        switch (msg.type) {
+          case 'event':
+            showToast(msg.icon ?? '👁️', msg.message ?? '');
+            break;
+          case 'result':
+            break;
+          case 'report_ready':
+            goReport();
+            break;
+          case 'error':
+            console.warn('[interview] ws error', msg.code, msg.message);
+            break;
+          default:
+            break;
+        }
+      };
+
+      ws.onerror = () => {
+        console.warn('[interview] WebSocket 오류 — 백엔드가 떠 있는지 확인하세요.');
+      };
+
+      ws.onclose = (e) => {
+        stopFrames();
+        if (wsRef.current === ws) wsRef.current = null;
+        setLive(false);
+        if (teardownRef.current) return;
+        const fatal = e.code === 1000 || (e.code >= 4000 && e.code < 5000);
+        if (fatal) {
+          if (e.code !== 1000) console.warn(`[interview] WebSocket 종료 (code ${e.code}) — 로컬 진행으로 폴백합니다.`);
+          return;
+        }
+        if (retryRef.current >= MAX_RECONNECT) {
+          console.warn('[interview] 재연결 3회 실패 — 로컬 진행(목업 알림)으로 폴백합니다.');
+          return;
+        }
+        retryRef.current += 1;
+        reconnectTimerRef.current = window.setTimeout(() => connect(true), RECONNECT_DELAY_MS);
+      };
+    },
+    [goReport, showToast, startFrames, stopFrames]
+  );
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -42,24 +223,89 @@ export default function InterviewPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    teardownRef.current = false;
+
+    (async () => {
+      try {
+        const res = await apiFetch('/api/questions');
+        if (!res.ok) throw new Error(`GET /api/questions → ${res.status}`);
+        const list: ApiQuestion[] = await res.json();
+        const texts = [...list].sort((a, b) => a.sort_order - b.sort_order).map((q) => q.text);
+        if (!cancelled && texts.length) setQuestions(texts);
+      } catch (e) {
+        console.warn('[interview] 질문 목록 로드 실패 — 기본 질문으로 진행합니다.', e);
+      }
+
+      if (cancelled) return;
+
+      try {
+        const res = await apiFetch('/api/sessions', {
+          method: 'POST',
+          body: JSON.stringify({ mode: 'live' }),
+        });
+        if (!res.ok) throw new Error(`POST /api/sessions → ${res.status}`);
+        const session: CreatedSession = await res.json();
+        const { data } = await getSupabase().auth.getSession();
+        const token = data.session?.access_token;
+        if (cancelled) return;
+        if (!session?.id) throw new Error('세션 id 없음');
+        if (!token) throw new Error('access_token 없음');
+        sessionIdRef.current = session.id;
+        tokenRef.current = token;
+        if (session.questions?.length) {
+          setQuestions(
+            [...session.questions].sort((a, b) => a.order_index - b.order_index).map((q) => q.text)
+          );
+        }
+        connect(false);
+      } catch (e) {
+        console.warn('[interview] 세션 생성 실패 — 로컬 진행(목업 알림)으로 폴백합니다.', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      teardownRef.current = true;
+      stopFrames();
+      if (reconnectTimerRef.current !== null) clearTimeout(reconnectTimerRef.current);
+      if (reportTimerRef.current !== null) clearTimeout(reportTimerRef.current);
+      wsRef.current?.close(1000, 'unmount');
+      wsRef.current = null;
+    };
+  }, [connect, stopFrames]);
+
+  useEffect(() => {
+    if (live) return;
     const interval = setInterval(() => {
       const pick = TOAST_POOL[Math.floor(Math.random() * TOAST_POOL.length)];
-      const id = ++toastId;
-      setToasts((prev) => [...prev, { id, ...pick }]);
-      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
-    }, 5000);
+      showToast(pick.icon, pick.message);
+    }, MOCK_TOAST_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []);
+  }, [live, showToast]);
 
-  const isLast = currentIndex === QUESTIONS.length - 1;
-  const progress = ((currentIndex + 1) / QUESTIONS.length) * 100;
+  const isLast = currentIndex >= questions.length - 1;
+  const progress = ((currentIndex + 1) / questions.length) * 100;
 
   const handleNext = () => {
+    const ws = wsRef.current;
+    const open = ws?.readyState === WebSocket.OPEN;
+
     if (isLast) {
-      router.push('/interview/report');
-    } else {
-      setCurrentIndex((i) => i + 1);
+      if (open) {
+        stopFrames();
+        ws!.send(JSON.stringify({ type: 'end' }));
+        teardownRef.current = true;
+        reportTimerRef.current = window.setTimeout(goReport, REPORT_FALLBACK_MS);
+      } else {
+        goReport();
+      }
+      return;
     }
+
+    const next = currentIndex + 1;
+    setCurrentIndex(next);
+    if (open) ws!.send(JSON.stringify({ type: 'question', index: next }));
   };
 
   return (
@@ -67,7 +313,7 @@ export default function InterviewPage() {
       <ToastStack toasts={toasts} />
       <Link className="page-back" href="/">← 홈으로</Link>
       <h1 className="page-title">모의면접 진행 중</h1>
-      <p className="page-sub">웹캠으로 시선과 표정을 실시간으로 관찰하고 있습니다.</p>
+      <p className="page-sub" style={{ color: 'var(--ink)' }}>웹캠으로 시선과 표정을 실시간으로 관찰하고 있습니다.</p>
 
       <div className="progress-track">
         <div className="progress-fill" style={{ width: `${progress}%` }} />
@@ -79,12 +325,16 @@ export default function InterviewPage() {
         ) : (
           <video ref={videoRef} autoPlay playsInline muted />
         )}
+        <canvas ref={canvasRef} width={FRAME_PX} height={FRAME_PX} style={{ display: 'none' }} />
         <div className="video-rec"><span className="dot" />분석 중</div>
+        <button className="toast-toggle" type="button" onClick={toggleToast} aria-pressed={toastEnabled}>
+          {toastEnabled ? '🔔 알림 켜짐' : '🔕 알림 꺼짐'}
+        </button>
       </div>
 
       <div className="question-card">
-        <div className="question-index">질문 {currentIndex + 1} / {QUESTIONS.length}</div>
-        <p className="question-text">{QUESTIONS[currentIndex]}</p>
+        <div className="question-index">질문 {currentIndex + 1} / {questions.length}</div>
+        <p className="question-text">{questions[currentIndex]}</p>
       </div>
 
       <div className="action-row">
@@ -94,4 +344,43 @@ export default function InterviewPage() {
       </div>
     </div>
   );
+}
+
+export default function InterviewPage() {
+  const router = useRouter();
+  const [authed, setAuthed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await getSupabase().auth.getSession();
+        if (cancelled) return;
+        if (data.session) {
+          setAuthed(true);
+          return;
+        }
+      } catch (e) {
+        console.warn('[interview] 세션 확인 실패 — 로그인 화면으로 보냅니다.', e);
+        if (cancelled) return;
+      }
+      setAuthed(false);
+      router.replace('/login?redirect=/interview');
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  if (authed !== true) {
+    return (
+      <div className="page-shell">
+        <div className="question-index">확인 중...</div>
+      </div>
+    );
+  }
+
+  return <InterviewSession />;
 }

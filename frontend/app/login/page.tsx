@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase';
 
-export default function LoginPage() {
+const safeRedirect = (value: string | null) =>
+  value && value.startsWith('/') && !value.startsWith('//') ? value : '/interview';
+
+function LoginForm() {
   const router = useRouter();
+  const redirectTo = safeRedirect(useSearchParams().get('redirect'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,7 +28,7 @@ export default function LoginPage() {
       setError(signInError.message);
       return;
     }
-    router.push('/interview');
+    router.push(redirectTo);
   };
 
   return (
@@ -81,5 +85,19 @@ export default function LoginPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="page-shell auth-shell">
+          <div className="question-index">확인 중...</div>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

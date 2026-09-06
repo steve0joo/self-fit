@@ -1,8 +1,5 @@
 'use client';
 
-// 연결 확인 전용 페이지. FE → BE(FastAPI) → Supabase 인증까지 한 화면에서 검증한다.
-// 서비스 화면이 아니므로 통합이 끝나면 삭제해도 된다.
-
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@supabase/supabase-js';
@@ -21,21 +18,18 @@ export default function ConnectCheckPage() {
   const [password, setPassword] = useState('');
   const [authMsg, setAuthMsg] = useState('');
 
-  // 1) FE → BE 연결
   useEffect(() => {
     fetch(`${API_URL}/health`)
       .then(async (r) => setHealth({ label: 'FastAPI /health', state: r.ok ? 'ok' : 'fail', detail: `${r.status} ${await r.text()}` }))
       .catch((e) => setHealth({ label: 'FastAPI /health', state: 'fail', detail: `${API_URL} 에 연결 실패: ${e.message}` }));
   }, []);
 
-  // 2) Supabase 세션 추적
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // 3) 세션 토큰으로 BE 보호 API 호출
   useEffect(() => {
     if (!session) return;
     fetch(`${API_URL}/api/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })
