@@ -7,7 +7,7 @@ from datetime import UTC
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from app.analysis.types import ATTENTION_FOCUSED, EMOTION_OTHER, EMOTION_USED
+from app.analysis.types import ATTENTION_FOCUSED, ATTENTION_LABELS, EMOTION_OTHER, EMOTION_USED
 from app.models import AnalysisLog, Event, Report, Session
 
 STABLE_EMOTIONS = {"중립", "기쁨"}
@@ -52,7 +52,7 @@ def build_report(db: DbSession, s: Session) -> dict:
     emo_keys = sorted(EMOTION_USED) + [EMOTION_OTHER]
     emotion_distribution = {k: _rate(m["_emo"].get(k, 0), m["_valid"]) for k in emo_keys}
     att_total = sum(m["_att"].values())
-    attention_distribution = {k: _rate(v, att_total) for k, v in m["_att"].items()}
+    attention_distribution = {k: _rate(m["_att"].get(k, 0), att_total) for k in ATTENTION_LABELS}
 
     per_question = []
     for q in s.questions:

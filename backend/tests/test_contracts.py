@@ -1,7 +1,7 @@
 """계약 테스트: 응답 형태가 설계 문서(03-phase1-design.md 5절, 5.6절, 6절)와 일치하는지.
 FE 는 이 형태를 보고 개발하므로 필드가 빠지거나 이름이 바뀌면 여기서 잡혀야 한다."""
 
-from app.analysis.types import EMOTION_OTHER, EMOTION_USED
+from app.analysis.types import ATTENTION_LABELS, EMOTION_OTHER, EMOTION_USED
 
 SESSION_KEYS = {"id", "mode", "status", "created_at", "started_at", "finished_at", "questions", "ws_url"}
 SESSION_Q_KEYS = {"order_index", "question_id", "text", "started_at", "ended_at"}
@@ -82,6 +82,7 @@ def test_report_contract_after_live_session(client, auth_ws):
     assert all(0.0 <= v <= 1.0 for k, v in rep["overview"].items() if k != "event_count")
     assert set(rep["emotion_distribution"]) == EMOTION_USED | {EMOTION_OTHER}
     assert abs(sum(rep["emotion_distribution"].values()) - 1.0) < 0.01
+    assert set(rep["attention_distribution"]) == set(ATTENTION_LABELS)  # 라벨 5개 항상 포함
     assert len(rep["per_question"]) == 5 and set(rep["per_question"][0]) == PER_Q_KEYS
     assert rep["per_question"][0]["duration_ms"] >= 0
     for e in rep["timeline"]:
