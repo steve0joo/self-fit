@@ -9,7 +9,7 @@ from app.auth import CurrentUserDep
 from app.db import get_db
 from app.models import Event, Session
 from app.schemas import EventOut, SessionCreate, SessionList, SessionListItem, SessionOut, SessionQuestionOut
-from app.services import report_service
+from app.services import recording_service, report_service
 from app.services import session_service as svc
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -78,6 +78,7 @@ def finish(session_id: uuid.UUID, user: CurrentUserDep, db: DbDep):
     """WebSocket 없이 강제 종료 (탭 닫힘 복구용). 리포트를 생성한다."""
     s = svc.get_owned_session(db, session_id, uuid.UUID(user.id))
     svc.finish_session(db, s)
+    recording_service.assemble(session_id)
     report_service.save_report(db, s)
     return {"status": "finished", "report_ready": True}
 
@@ -87,6 +88,7 @@ def delete(session_id: uuid.UUID, user: CurrentUserDep, db: DbDep):
     s = svc.get_owned_session(db, session_id, uuid.UUID(user.id))
     db.delete(s)
     db.commit()
+    recording_service.delete(session_id)  # 세션 삭제 시 영상도 삭제 (개인정보)
 
 
 @router.get("/{session_id}/events", response_model=list[EventOut])

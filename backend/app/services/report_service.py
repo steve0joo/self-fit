@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.analysis.types import ATTENTION_FOCUSED, ATTENTION_LABELS, EMOTION_OTHER, EMOTION_USED
 from app.models import AnalysisLog, Event, Report, Session
+from app.services import recording_service as rec
 
 STABLE_EMOTIONS = {"중립", "기쁨"}
 
@@ -74,9 +75,22 @@ def build_report(db: DbSession, s: Session) -> dict:
             }
         )
 
+    recording = rec.info(s.id)
     summary = {
         "session_id": str(s.id),
         "duration_ms": _ms(s.started_at, s.finished_at),
+        # guideline/05 2절. stt/llm 은 구현 전이라 skipped. 구현되면 백그라운드 작업이 갱신한다
+        "status": {
+            "metrics": "done",
+            "recording": "done" if recording else "skipped",
+            # STT/LLM 백그라운드 작업 구현 전까지는 skipped 로 둔다 (pending 이면 FE 가 무한 폴링).
+            # 구현 시: settings.stt_enabled and recording → "pending", settings.openai_api_key → "pending"
+            "stt": "skipped",
+            "llm": "skipped",
+        },
+        "recording": recording,
+        "transcript": [],
+        "llm": None,
         "overview": {
             k: m[k]
             for k in (

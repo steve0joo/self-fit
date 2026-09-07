@@ -242,6 +242,16 @@ reports (
 
 상태 전이: `created --(WS 연결 + start)--> running --(WS end 또는 /finish)--> finished`. WS가 끊긴 `running` 세션은 그대로 두고, FE가 다시 들어오면 `/finish`로 정리한다. 자동 정리는 Phase 3.
 
+### 5.2.1 녹화 (guideline/05, 2026-09-07 추가)
+| 메서드 | 경로 | 요청 | 응답 |
+|---|---|---|---|
+| POST | `/api/sessions/{id}/recording/chunks?seq=N` | multipart `chunk` (MediaRecorder webm 조각, 5MB 이하) | `204`. 같은 seq 재전송은 덮어씀. 세션이 `created`면 `409`, `finished` 후 5초 유예 |
+| GET | `/api/sessions/{id}/recording` | | `video/webm`, Range 지원. 없으면 `404` |
+
+저장: `MEDIA_DIR/{session_id}/chunks/NNNNNN.webm` → 종료(`end` 또는 `/finish`) 시 seq 순으로 이어 붙여 `recording.webm`. ffmpeg 가 있으면 `-c copy` remux 로 duration·cue 를 넣어 탐색 가능하게 함. 세션 삭제 시 폴더째 삭제.
+
+**개인정보 원칙 변경:** Phase 1 까지는 얼굴 원본을 저장하지 않았으나, 영상 타임스탬프 기능을 위해 **면접 녹화 영상을 로컬 디스크에 저장**한다. 본인만 조회 가능하고 세션 삭제와 함께 지워진다. (`01-dev-plan.md` 비기능 요구 갱신)
+
 ### 5.3 리포트
 | 메서드 | 경로 | 응답 |
 |---|---|---|
@@ -634,6 +644,9 @@ FE 담당자 확인이 필요한 결정. 답이 없으면 괄호 값으로 진�
 | 6 | 리포트 | `services/report_service.py`, `routers/reports.py` | **완료 (기본).** 5.6절 구조 전부 생성. 집계값 정밀 검증 테스트는 추가 예정 |
 | 7 | FE 통합 (Mock) | FE와 함께 실제 웹캠 시연 | 토스트·리포트 확인 |
 | 8 | 추론 서버 (Phase 2) | Docker Desktop 설치(선행), `inference/` 프로젝트, Dockerfile + compose, 모델 3개 이식, `/v1/*` | **완료 (2026-09-07).** `/v1/health`가 `cuda`, 샘플 추론 성공, 640px 프레임 기준 왕복 17~27ms. 단위 테스트 7개 |
-| 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | 진행 중. BE `.env` 전환 완료, 실제 웹캠 확인 대기 |
+| 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | **완료.** E2E 통과, 실제 웹캠 확인은 사용자 |
+| 10 | 녹화 업로드 (guideline/05 ①) | `routers/recordings.py`, `services/recording_service.py` | **완료 (2026-09-07).** 조각 업로드·합치기·Range 스트리밍·삭제, 테스트 6개, 실제 webm remux 검증 |
+| 11 | STT (guideline/05 ②) | 추론 서버 faster-whisper small, `/v1/transcribe`, 질문 구간별 | 예정 |
+| 12 | LLM 리포트 (guideline/05 ③) | OpenAI gpt-4o-mini, 백그라운드, `status` 갱신 | 예정 |
 
 각 작업은 `dev`에서 브랜치를 따 PR로 합친다. 작업 1~3은 서로 독립이라 병렬 가능.

@@ -8,3 +8,6 @@ htmlcov/
 # 로컬 SQLite 개발 DB
 *.db
 *.db-journal
+# 면접 녹화 (개인정보, 로컬 디스크)
+media/
+test_media/
