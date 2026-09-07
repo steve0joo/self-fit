@@ -1,0 +1,32 @@
+# ── 전 파트 공통 규칙만 둔다. 파트별 도구 캐시는 각 폴더의 .gitignore 에서 관리.
+#    frontend/.gitignore → FE 담당, backend/.gitignore → BE 담당, ai/.gitignore → AI 담당
+
+# 비밀 정보 (예시 파일만 허용)
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# 대용량 파일: 모델 zip, 가중치, 데이터셋, Docker 이미지
+*.zip
+*.zip.*
+*.irx*
+*.tar
+*.tar.gz
+*.pth
+*.pt
+*.pkl
+*.onnx
+*.ckpt
+*.h5
+*.safetensors
+
+# Python 공통 안전망 (모든 파트가 uv/venv 를 쓰므로 실수 방지용)
+.venv/
+__pycache__/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

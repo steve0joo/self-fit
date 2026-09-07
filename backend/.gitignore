@@ -1,0 +1,10 @@
+# 백엔드 전용. 공통 규칙(.env, 모델 파일, .venv)은 루트 .gitignore 에 있음
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+*.pyc
+htmlcov/
+.coverage
+# 로컬 SQLite 개발 DB
+*.db
+*.db-journal
