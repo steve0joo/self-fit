@@ -74,7 +74,19 @@ def set_status(session_id: uuid.UUID, key: str, value: str, **fields) -> None:
 
 
 async def run(session_id: uuid.UUID, client: InferenceClient) -> None:
-    """질문별 STT 실행. 예외는 status.failed 로 기록하고 삼킨다 (면접 흐름을 막지 않음)."""
+    """질문별 STT 실행 후 LLM 리포트 실행. 예외는 status.failed 로 기록하고 삼킨다 (면접 흐름을 막지 않음)."""
+    try:
+        await _run_stt(session_id, client)
+    finally:
+        from app.services import llm_service  # 순환 import 방지
+
+        await llm_service.run(session_id)
+
+
+async def _run_stt(session_id: uuid.UUID, client: InferenceClient) -> None:
+    if not get_settings().stt_enabled:
+        set_status(session_id, "stt", "skipped")
+        return
     src = rec.final_path(session_id)
     if not src.exists():
         set_status(session_id, "stt", "skipped")
@@ -127,8 +139,5 @@ async def run(session_id: uuid.UUID, client: InferenceClient) -> None:
 
 
 def schedule(session_id: uuid.UUID, client: InferenceClient) -> None:
-    """이벤트 루프 안에서 호출. 백그라운드 태스크로 실행."""
-    if not get_settings().stt_enabled:
-        set_status(session_id, "stt", "skipped")
-        return
+    """이벤트 루프 안에서 호출. STT → LLM 을 한 백그라운드 태스크로 실행."""
     asyncio.get_running_loop().create_task(run(session_id, client))

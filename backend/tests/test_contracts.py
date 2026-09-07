@@ -21,7 +21,14 @@ REPORT_KEYS = {
     "transcript",
     "llm",
 }
-OVERVIEW_KEYS = {"gaze_hold_rate", "stable_emotion_rate", "attention_rate", "face_found_rate", "event_count"}
+OVERVIEW_KEYS = {
+    "gaze_hold_rate",
+    "stable_emotion_rate",
+    "attention_rate",
+    "face_found_rate",
+    "event_count",
+    "frames_analyzed",
+}
 PER_Q_KEYS = {
     "order_index",
     "question_id",
@@ -86,7 +93,9 @@ def test_report_contract_after_live_session(client, auth_ws):
     assert set(rep["status"]) == {"metrics", "recording", "stt", "llm"}
     assert all(v in ("pending", "running", "done", "failed", "skipped") for v in rep["status"].values())
     assert set(rep["overview"]) == OVERVIEW_KEYS
-    assert all(0.0 <= v <= 1.0 for k, v in rep["overview"].items() if k != "event_count")
+    assert all(
+        0.0 <= v <= 1.0 for k, v in rep["overview"].items() if k not in ("event_count", "frames_analyzed")
+    )
     assert set(rep["emotion_distribution"]) == EMOTION_USED | {EMOTION_OTHER}
     assert abs(sum(rep["emotion_distribution"].values()) - 1.0) < 0.01
     assert set(rep["attention_distribution"]) == set(ATTENTION_LABELS)  # 라벨 5개 항상 포함

@@ -47,7 +47,7 @@
 | FE 통합 | FE가 질문 API, 프레임 전송, 토스트 토글, 리포트 화면을 붙임 | Phase 1 완료 |
 | Phase 2 | Docker Desktop 설치 → 추론 서버 구축 → 모델 3개 이식 → 샘플로 검증 → 크롭 여백·클래스 순서 실측 → BE를 `http` 모드로 전환 | AI 팀 파인튜닝 모델(감정) |
 | LAN 시연 | WSL mirrored 네트워크, 방화벽, 서버 0.0.0.0 바인딩 | Phase 2 |
-| 추가 기능 | 녹화 업로드(완료) → STT(완료) → LLM 리포트 → 영상 타임스탬프(FE). 계약은 `05-recording-stt-llm.md` | Phase 2 |
+| 추가 기능 | 녹화 업로드·STT·LLM 리포트·영상 URL **모두 완료**. FE 쪽 렌더링만 남음. 계약은 `05-recording-stt-llm.md` | Phase 2 |
 | Phase 3 | 영상 업로드 분석 | Phase 2 |
 
 ## 6. 각 팀에 확인·요청하는 것
