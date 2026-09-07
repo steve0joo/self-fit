@@ -12,5 +12,6 @@
 | [02-for-frontend.md](02-for-frontend.md) | FE 인수인계. API·WebSocket 규격과 코드, FE가 할 일 | FE |
 | [03-for-ai.md](03-for-ai.md) | AI 인수인계. 모델 분석 결과, 실행 위치, 납품 규약, 확인 요청 | AI |
 | [04-dev-workflow.md](04-dev-workflow.md) | 운영 규칙. 깃, 로컬 실행, 문서 위치 | 전원 |
+| [05-recording-stt-llm.md](05-recording-stt-llm.md) | FE 계약. 녹화 업로드, STT, LLM 리포트, 영상 타임스탬프 (추가 기능) | FE |
 
 상세 설계(API 전체 명세, DB 스키마, 판정 규칙 수치)는 `../docs/03-phase1-design.md`에 있고, 이 폴더는 그 요약과 팀별 안내다. 문서와 코드가 다르면 코드가 맞고, 발견한 사람이 백엔드 담당에게 알려 주면 문서를 고친다.
