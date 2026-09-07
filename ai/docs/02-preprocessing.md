@@ -6,6 +6,7 @@
 - 대상 문서: [`emotion-finetune-spec.md`](./emotion-finetune-spec.md), 선행 검증 [`01-data-verification.md`](./01-data-verification.md)
 - 스크립트: [`ai/scripts/preprocess.py`](../scripts/preprocess.py)
 - 산출물(gitignore 대상): `ai/data/processed/`
+- 품질 분석·그림: [`02b-preprocessing-analysis.md`](./02b-preprocessing-analysis.md) — IoU 분포, 임계값 민감도, 거부 이미지 전량 갤러리
 
 스펙 §1.2(다수결 라벨) → §2.1(EXIF) → §2.3(MediaPipe 0% 마진 크롭) → §3.2(160×160 캐시) → §4(6,800 캡 · person 단위 split 동결)를 한 번에 실행했다. 이 단계 이후로 **라벨 JSON은 다시 쓰이지 않는다** — 학습·평가는 `.npy`만 읽는다.
 
@@ -95,6 +96,8 @@ anxious만 86까지 올라가는데, 풀을 거의 다 쓰기 때문에 잘라�
 
 손상된 파일 1건: `5c083653c105…_여_30_중립_오락&공연시설_20201205012101-005-005.jpg` (`broken data stream when reading image file`).
 
+> **IoU 21건의 정체는 [02b §4](./02b-preprocessing-analysis.md)에서 따로 파헤쳤다.** 요약하면 검출 오류가 아니라 **애노테이터 박스가 망가진 이미지**다 — 8건은 annot_A 박스의 넓이가 0이고, 21건 전부 MediaPipe 쪽은 정상적인 얼굴을 잡았다. 유지된 27,200장의 IoU 분포(중앙값 0.719, 최소 0.428)와 임계값 민감도도 같은 문서에 있다.
+
 ### MediaPipe 박스 실측 (유지된 27,200장)
 
 | 항목 | 값 | 스펙의 13장 표본 |
@@ -116,6 +119,8 @@ anxious만 86까지 올라가는데, 풀을 거의 다 쓰기 때문에 잘라�
 100장 전부 확인한 결과: **뒤집힌 얼굴 0건, 배경으로 새어 나간 크롭 0건, 다른 사람 얼굴이 잡힌 경우 0건.** 이마~턱 프레이밍이 일관되고 grayscale 채널 순서도 정상이다(§2.4의 R↔B 스왑이 있었다면 얼굴이 부자연스럽게 어두워진다).
 
 한 가지 눈에 띄는 점: **anxious(빨강)와 embarrassed(주황) 타일이 사람 눈으로도 구분이 어렵다.** 전처리 버그가 아니라 스펙 §1.3이 라벨 노이즈 상한선으로 지목한 embarrassed↔anxious 경계가 픽셀에서도 그대로 보이는 것이다. 성능 표를 읽을 때 이걸 감안할 것.
+
+무작위 100장이 아니라 **분포의 최악단**을 봐야 필터를 평가할 수 있다. 거부된 21장 전량과 IoU 최하위로 통과한 12장을 박스와 함께 그린 갤러리가 [02b §4](./02b-preprocessing-analysis.md)에 있다.
 
 ## 5. 스펙·이전 문서 정정 사항
 
@@ -155,6 +160,7 @@ anxious만 86까지 올라가는데, 풀을 거의 다 쓰기 때문에 잘라�
 ### 아직 열려 있는 §7.2 항목
 
 - [x] ~~MediaPipe 검출 실패율 실측~~ — **완료. 0건 / 27,633장 (전체 실패 0.08%)**
+- [x] ~~IoU 임계값 0.4의 타당성 검증~~ — **완료. 0.0~0.6 어디를 골라도 결과 동일, 0.65부터 anxious 캡 붕괴 → [02b §2·§3](./02b-preprocessing-analysis.md)**
 - [ ] 원본 `cropImages.py` 리사이즈 방식(패딩 vs stretch) 확인 → 5.2
 - [ ] BE 서빙 MediaPipe 파라미터 확인 → 5.3
 - [ ] 디스크 데이터 완전성 확인 (JSON 대비 27%뿐. 전체를 받으면 anxious 풀이 6,897 → 약 23,000)
