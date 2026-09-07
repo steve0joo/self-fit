@@ -15,6 +15,18 @@ export async function apiFetch(path: string, init?: RequestInit) {
   });
 }
 
+export async function apiFetchRaw(path: string, init?: RequestInit) {
+  const { data } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  return fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      ...init?.headers,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
 export function getWsUrl(sessionId: string, token: string) {
   return `${API_URL.replace('http', 'ws')}/ws/sessions/${sessionId}?token=${token}`;
 }

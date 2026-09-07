@@ -320,6 +320,17 @@ html, body { margin: 0; padding: 0; }
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
 }
 
+.selffit-app .mic-status {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  max-width: calc(100% - 230px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-muted);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600;
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+}
+
+.selffit-app .mic-wave { display: flex; align-items: center; gap: 3px; height: 15px; }
+.selffit-app .mic-wave span { width: 3px; height: 3px; border-radius: 999px; background: var(--blue); }
+
 .selffit-app .question-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px;
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
@@ -346,6 +357,10 @@ html, body { margin: 0; padding: 0; }
 .selffit-app .bar-track { flex: 1; height: 10px; background: var(--tint); border-radius: 999px; overflow: hidden; }
 .selffit-app .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--blue), var(--violet)); }
 .selffit-app .bar-value { width: 34px; text-align: right; font-family: 'Space Grotesk'; font-weight: 600; }
+
+.selffit-app .recording-player {
+  display: block; width: 100%; border-radius: 14px; background: var(--surface); border: 1px solid var(--line);
+}
 
 .selffit-app .feedback-list { list-style: none; margin: 0; padding: 0; }
 .selffit-app .feedback-list li {

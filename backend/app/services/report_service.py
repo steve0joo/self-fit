@@ -7,8 +7,16 @@ from datetime import UTC
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from app.analysis.types import ATTENTION_FOCUSED, ATTENTION_LABELS, EMOTION_OTHER, EMOTION_USED
+from app.analysis.types import (
+    ATTENTION_FOCUSED,
+    ATTENTION_LABELS,
+    EMOTION_LABELS,
+    EMOTION_OTHER,
+    EMOTION_UNCERTAIN,
+)
+from app.config import get_settings
 from app.models import AnalysisLog, Event, Report, Session
+from app.services import recording_service as rec
 
 STABLE_EMOTIONS = {"중립", "기쁨"}
 
@@ -28,15 +36,18 @@ def _ms(a, b) -> int:
 def _metrics(logs: list[AnalysisLog], events: list[Event]) -> dict:
     valid = [l for l in logs if l.face_found]
     with_att = [l for l in valid if l.attention_top]
-    emo = Counter(l.emotion_top or EMOTION_OTHER for l in valid)
+    judged = [l for l in valid if l.emotion_top and l.emotion_top != EMOTION_UNCERTAIN]  # τ 통과 프레임만
+    emo = Counter(l.emotion_top for l in judged)
     att = Counter(l.attention_top for l in with_att)
     return {
         "gaze_hold_rate": _rate(sum(1 for l in valid if l.gaze_state == "center"), len(valid)),
-        "stable_emotion_rate": _rate(sum(1 for l in valid if l.emotion_top in STABLE_EMOTIONS), len(valid)),
+        "stable_emotion_rate": _rate(sum(1 for l in judged if l.emotion_top in STABLE_EMOTIONS), len(judged)),
         "attention_rate": _rate(att.get(ATTENTION_FOCUSED, 0), len(with_att)),
         "face_found_rate": _rate(len(valid), len([l for l in logs if l.face_found is not None])),
         "event_count": len(events),
+        "frames_analyzed": len(logs),  # 0 이면 행동 지표가 측정되지 않은 것
         "_emo": emo,
+        "_judged": len(judged),
         "_att": att,
         "_valid": len(valid),
     }
@@ -49,8 +60,9 @@ def build_report(db: DbSession, s: Session) -> dict:
     events = list(db.scalars(select(Event).where(Event.session_id == s.id).order_by(Event.ts_ms)))
     m = _metrics(logs, events)
 
-    emo_keys = sorted(EMOTION_USED) + [EMOTION_OTHER]
-    emotion_distribution = {k: _rate(m["_emo"].get(k, 0), m["_valid"]) for k in emo_keys}
+    # 채택(τ 통과) 프레임 기준 4종 분포. 원본 7클래스 모델을 쓸 때만 "기타" 키가 붙는다
+    emo_keys = list(EMOTION_LABELS) + ([EMOTION_OTHER] if m["_emo"].get(EMOTION_OTHER) else [])
+    emotion_distribution = {k: _rate(m["_emo"].get(k, 0), m["_judged"]) for k in emo_keys}
     att_total = sum(m["_att"].values())
     attention_distribution = {k: _rate(m["_att"].get(k, 0), att_total) for k in ATTENTION_LABELS}
 
@@ -74,9 +86,21 @@ def build_report(db: DbSession, s: Session) -> dict:
             }
         )
 
+    recording = rec.info(s.id)
     summary = {
         "session_id": str(s.id),
         "duration_ms": _ms(s.started_at, s.finished_at),
+        # guideline/05 2절. stt/llm 은 구현 전이라 skipped. 구현되면 백그라운드 작업이 갱신한다
+        "status": {
+            "metrics": "done",
+            "recording": "done" if recording else "skipped",
+            # stt 는 stt_service.schedule 이 pending→running→done 으로 갱신. llm 은 구현 전까지 skipped
+            "stt": "pending" if (get_settings().stt_enabled and recording) else "skipped",
+            "llm": "pending" if get_settings().openai_api_key else "skipped",
+        },
+        "recording": recording,
+        "transcript": [],
+        "llm": None,
         "overview": {
             k: m[k]
             for k in (
@@ -85,6 +109,7 @@ def build_report(db: DbSession, s: Session) -> dict:
                 "attention_rate",
                 "face_found_rate",
                 "event_count",
+                "frames_analyzed",
             )
         },
         "emotion_distribution": emotion_distribution,

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase';
 
 const safeRedirect = (value: string | null) =>
-  value && value.startsWith('/') && !value.startsWith('//') ? value : '/interview';
+  value && value.startsWith('/') && !value.startsWith('//') ? value : '/';
 
 function LoginForm() {
   const router = useRouter();

@@ -10,7 +10,7 @@ S = get_settings()
 def frame(ts_ms, yaw=0.0, emotion_top="중립", prob=0.8, face=True):
     if not face:
         return FrameResult(ts_ms=ts_ms, face_found=False)
-    probs = {"기쁨": 0, "당황": 0, "분노": 0, "불안": 0, "상처": 0, "슬픔": 0, "중립": 0}
+    probs = {"기쁨": 0, "당황": 0, "불안": 0, "중립": 0}
     probs[emotion_top] = prob
     return FrameResult(
         ts_ms=ts_ms,
@@ -63,3 +63,20 @@ def test_face_lost():
     e = RuleEngine(S)
     e.feed(frame(0, face=False))
     assert [f.type for f in e.feed(frame(int(S.face_lost_seconds * 1000), face=False))] == ["face_lost"]
+
+
+def test_uncertain_emotion_frames_are_ignored_by_rules():
+    """추론 서버가 accepted=False(τ 미달)로 준 프레임은 감정 이벤트를 만들지 않는다."""
+    from app.analysis.types import EMOTION_UNCERTAIN
+
+    e = RuleEngine(S)
+    probs = {"기쁨": 0.0, "당황": 0.0, "불안": 0.9, "중립": 0.1}
+    mk = lambda ts: FrameResult(
+        ts_ms=ts,
+        face_found=True,
+        face=FaceBox(0, 0, 10, 10, 1.0),
+        gaze=GazeResult(0.0, 0.0, 0.9),
+        emotion=EmotionResult(probs, EMOTION_UNCERTAIN, accepted=False, confidence=0.9),
+    )
+    e.feed(mk(0))
+    assert not [f for f in e.feed(mk(20_000)) if f.type.startswith("emotion")]

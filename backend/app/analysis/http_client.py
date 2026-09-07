@@ -3,6 +3,7 @@
 import httpx
 
 from app.analysis.types import (
+    EMOTION_UNCERTAIN,
     AttentionResult,
     EmotionResult,
     FaceBox,
@@ -47,6 +48,28 @@ class HttpInferenceClient:
             raise InferenceError(f"inference rejected: {r.status_code} {r.text[:120]}")
         return parse_analyze(r.json(), ts_ms)
 
+    async def transcribe(self, audio: bytes, language: str = "ko") -> dict:
+        try:
+            r = await self._client.post(
+                "/v1/transcribe",
+                params={"language": language},
+                content=audio,
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=httpx.Timeout(300.0),  # 긴 오디오 허용
+            )
+        except httpx.HTTPError as e:
+            raise InferenceError(f"transcribe request failed: {e!r}") from e
+        if r.status_code != 200:
+            raise InferenceError(f"transcribe rejected: {r.status_code} {r.text[:120]}")
+        d = r.json()
+        return {
+            "text": d.get("text", ""),
+            "segments": d.get("segments", []),
+            "language": d.get("language"),
+            "duration_ms": d.get("duration_ms", 0),
+            "speech_ms": d.get("speech_ms", 0),
+        }
+
     async def health(self) -> dict:
         r = await self._client.get("/v1/health")
         r.raise_for_status()
@@ -54,6 +77,14 @@ class HttpInferenceClient:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+
+def _emotion(e: dict) -> EmotionResult:
+    accepted = bool(e.get("accepted", True))
+    top = emotion_top_from_probs(e["probs"]) if accepted else EMOTION_UNCERTAIN
+    return EmotionResult(
+        probs=dict(e["probs"]), top=top, accepted=accepted, confidence=float(e.get("confidence", 1.0))
+    )
 
 
 def parse_analyze(d: dict, ts_ms: int) -> FrameResult:
@@ -68,7 +99,7 @@ def parse_analyze(d: dict, ts_ms: int) -> FrameResult:
             face_found=True,
             face=FaceBox(int(f["x"]), int(f["y"]), int(f["w"]), int(f["h"]), float(f.get("score", 1.0))),
             gaze=GazeResult(float(g["yaw_deg"]), float(g["pitch_deg"]), float(g.get("confidence", 1.0))),
-            emotion=EmotionResult(probs=dict(e["probs"]), top=emotion_top_from_probs(e["probs"])),
+            emotion=_emotion(e),
             attention=None if att is None else AttentionResult(probs=dict(att["probs"]), top=str(att["top"])),
             timing_ms=d.get("timing_ms", {}),
         )

@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ToastStack, { ToastItem } from '../components/ToastStack';
-import { apiFetch, getWsUrl } from '@/lib/api';
+import { apiFetch, apiFetchRaw, getWsUrl } from '@/lib/api';
 import { getSupabase } from '@/lib/supabase';
 
 const QUESTIONS = [
@@ -30,6 +30,10 @@ const REPORT_FALLBACK_MS = 3000;
 const TOAST_TTL_MS = 4000;
 const MOCK_TOAST_INTERVAL_MS = 5000;
 const TOAST_PREF_KEY = 'selffit:toastEnabled';
+const RECORD_TIMESLICE_MS = 3000;
+const RECORD_MIME = 'video/webm;codecs=vp8,opus';
+const RECORD_MIME_FALLBACK = 'video/webm';
+const RECORD_VIDEO_BPS = 800_000;
 
 function readToastPref(): boolean {
   if (typeof window === 'undefined') return true;
@@ -64,6 +68,21 @@ function syncCanvasToVideo(video: HTMLVideoElement, canvas: HTMLCanvasElement): 
   return true;
 }
 
+type MicStatus = 'recognizing' | 'video-only' | 'unstable';
+
+const MIC_LABEL: Record<Exclude<MicStatus, 'recognizing'>, string> = {
+  'video-only': '🔇 마이크 없음',
+  unstable: '⚠️ 녹음 전송이 불안정해요',
+};
+
+const MIC_FAIL_STREAK = 2;
+const MIC_BARS = 5;
+const MIC_BAR_MIN_PX = 3;
+const MIC_BAR_MAX_PX = 15;
+const MIC_FFT_SIZE = 64;
+const MIC_VOICE_BINS = 15;
+const MIC_GAIN = 2.4;
+
 type ApiQuestion = { id: number; text: string; sort_order: number };
 type SessionQuestion = { order_index: number; question_id: number; text: string };
 type CreatedSession = { id: string; questions?: SessionQuestion[]; ws_url?: string };
@@ -89,6 +108,16 @@ function InterviewSession() {
   const retryRef = useRef(0);
   const teardownRef = useRef(false);
   const navigatedRef = useRef(false);
+
+  const streamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const seqRef = useRef(0);
+  const [micStatus, setMicStatus] = useState<MicStatus>('recognizing');
+  const videoOnlyRef = useRef(false);
+  const chunkFailStreakRef = useRef(0);
+  const waveRef = useRef<HTMLDivElement>(null);
+  const [streamReady, setStreamReady] = useState(false);
+  const [recordingSessionId, setRecordingSessionId] = useState<string | null>(null);
   const [toastEnabled, setToastEnabled] = useState(true);
   const toastEnabledRef = useRef(true);
   toastEnabledRef.current = toastEnabled;
@@ -146,6 +175,36 @@ function InterviewSession() {
       );
     }, FRAME_INTERVAL_MS);
   }, [stopFrames]);
+
+  const uploadChunk = useCallback(async (sessionId: string, seq: number, blob: Blob) => {
+    const form = new FormData();
+    form.append('chunk', blob, `chunk-${seq}.webm`);
+    try {
+      const res = await apiFetchRaw(`/api/sessions/${sessionId}/recording/chunks?seq=${seq}`, {
+        method: 'POST',
+        body: form,
+      });
+      if (!res.ok) throw new Error(`POST recording/chunks?seq=${seq} → ${res.status}`);
+      console.log(`[interview] 녹화 청크 업로드 완료 seq=${seq} (${blob.size} bytes)`);
+      chunkFailStreakRef.current = 0;
+      if (!videoOnlyRef.current) setMicStatus('recognizing');
+    } catch (e) {
+      console.warn(`[interview] 녹화 청크 업로드 실패 seq=${seq} — 면접은 계속 진행합니다.`, e);
+      chunkFailStreakRef.current += 1;
+      if (!videoOnlyRef.current && chunkFailStreakRef.current >= MIC_FAIL_STREAK) setMicStatus('unstable');
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (!rec || rec.state === 'inactive') return;
+    try {
+      rec.stop();
+    } catch (e) {
+      console.warn('[interview] 녹화 중지 실패', e);
+    }
+  }, []);
 
   const goReport = useCallback(() => {
     if (navigatedRef.current) return;
@@ -232,15 +291,147 @@ function InterviewSession() {
   );
 
   useEffect(() => {
+    if (!streamReady || !recordingSessionId) return;
+    const stream = streamRef.current;
+    if (!stream) return;
+    if (typeof MediaRecorder === 'undefined') {
+      console.warn('[interview] 이 브라우저는 MediaRecorder를 지원하지 않습니다 — 녹화를 건너뜁니다.');
+      return;
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported(RECORD_MIME) ? RECORD_MIME : RECORD_MIME_FALLBACK;
+    let rec: MediaRecorder;
+    try {
+      rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: RECORD_VIDEO_BPS });
+    } catch (e) {
+      console.warn('[interview] MediaRecorder 생성 실패 — 녹화 없이 진행합니다.', e);
+      return;
+    }
+
+    rec.ondataavailable = (e) => {
+      if (!e.data || e.data.size === 0) return;
+      const seq = seqRef.current;
+      seqRef.current += 1;
+      void uploadChunk(recordingSessionId, seq, e.data);
+    };
+    rec.onerror = (e) => console.warn('[interview] 녹화 오류', e);
+
+    mediaRecorderRef.current = rec;
+    try {
+      rec.start(RECORD_TIMESLICE_MS);
+      console.log(`[interview] 녹화 시작 (${mimeType}, ${RECORD_TIMESLICE_MS}ms 단위)`);
+    } catch (e) {
+      console.warn('[interview] 녹화 시작 실패 — 녹화 없이 진행합니다.', e);
+      mediaRecorderRef.current = null;
+    }
+
+    return () => stopRecording();
+  }, [recordingSessionId, stopRecording, streamReady, uploadChunk]);
+
+  useEffect(() => {
+    if (micStatus !== 'recognizing' || !streamReady) return;
+    const stream = streamRef.current;
+    if (!stream || stream.getAudioTracks().length === 0) return;
+
+    const Ctor: typeof AudioContext | undefined =
+      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) {
+      console.warn('[interview] AudioContext 미지원 — 마이크 파형을 건너뜁니다.');
+      return;
+    }
+
+    let ctx: AudioContext;
+    let source: MediaStreamAudioSourceNode;
+    let analyser: AnalyserNode;
+    try {
+      ctx = new Ctor();
+      source = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = MIC_FFT_SIZE;
+      analyser.smoothingTimeConstant = 0.7;
+      source.connect(analyser);
+    } catch (e) {
+      console.warn('[interview] 마이크 분석 노드 생성 실패 — 파형 없이 진행합니다.', e);
+      return;
+    }
+
+    const resume = () => {
+      if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+    };
+    resume();
+    window.addEventListener('click', resume);
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const perBar = Math.max(1, Math.floor(Math.min(MIC_VOICE_BINS, data.length) / MIC_BARS));
+    let raf = 0;
+
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const bars = waveRef.current?.children;
+      if (!bars) return;
+      analyser.getByteFrequencyData(data);
+      for (let i = 0; i < bars.length; i += 1) {
+        let sum = 0;
+        for (let j = 0; j < perBar; j += 1) sum += data[i * perBar + j] ?? 0;
+        const level = Math.min(1, (sum / perBar / 255) * MIC_GAIN);
+        const px = MIC_BAR_MIN_PX + level * (MIC_BAR_MAX_PX - MIC_BAR_MIN_PX);
+        (bars[i] as HTMLElement).style.height = `${px.toFixed(1)}px`;
+      }
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('click', resume);
+      try {
+        source.disconnect();
+        analyser.disconnect();
+      } catch (e) {
+        console.warn('[interview] 마이크 분석 노드 정리 실패', e);
+      }
+      void ctx.close().catch(() => {});
+    };
+  }, [micStatus, streamReady]);
+
+  useEffect(() => {
     let stream: MediaStream | null = null;
+    let cancelled = false;
+
+    const attach = (s: MediaStream) => {
+      if (cancelled) {
+        s.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      stream = s;
+      streamRef.current = s;
+      if (videoRef.current) videoRef.current.srcObject = s;
+      const hasAudio = s.getAudioTracks().length > 0;
+      videoOnlyRef.current = !hasAudio;
+      setMicStatus(hasAudio ? 'recognizing' : 'video-only');
+      console.log(
+        hasAudio
+          ? '[interview] 마이크 트랙 확보 — 음성 인식 중으로 표시합니다.'
+          : '[interview] 마이크 없음(권한 거부/장치 없음) — 영상만 녹화하고 마이크 배지를 "마이크 없음"으로 표시합니다.'
+      );
+      setStreamReady(true);
+    };
+
     navigator.mediaDevices
-      ?.getUserMedia({ video: true })
-      .then((s) => {
-        stream = s;
-        if (videoRef.current) videoRef.current.srcObject = s;
-      })
-      .catch(() => setCameraError(true));
-    return () => stream?.getTracks().forEach((t) => t.stop());
+      ?.getUserMedia({ video: true, audio: true })
+      .then(attach)
+      .catch((e) => {
+        console.warn('[interview] 오디오 포함 getUserMedia 실패 — 영상만으로 재시도합니다.', e);
+        return navigator.mediaDevices
+          ?.getUserMedia({ video: true, audio: false })
+          .then(attach)
+          .catch(() => setCameraError(true));
+      });
+
+    return () => {
+      cancelled = true;
+      streamRef.current = null;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
 
   useEffect(() => {
@@ -274,6 +465,7 @@ function InterviewSession() {
         if (!token) throw new Error('access_token 없음');
         sessionIdRef.current = session.id;
         tokenRef.current = token;
+        setRecordingSessionId(session.id);
         if (session.questions?.length) {
           setQuestions(
             [...session.questions].sort((a, b) => a.order_index - b.order_index).map((q) => q.text)
@@ -313,6 +505,7 @@ function InterviewSession() {
     const open = ws?.readyState === WebSocket.OPEN;
 
     if (isLast) {
+      stopRecording();
       if (open) {
         stopFrames();
         ws!.send(JSON.stringify({ type: 'end' }));
@@ -348,6 +541,22 @@ function InterviewSession() {
         )}
         <canvas ref={canvasRef} style={{ display: 'none' }} />
         <div className="video-rec"><span className="dot" />분석 중</div>
+        {streamReady && (
+          <div className="mic-status" style={micStatus === 'unstable' ? { color: '#E14C4C' } : undefined}>
+            {micStatus === 'recognizing' ? (
+              <>
+                <div className="mic-wave" ref={waveRef} aria-hidden>
+                  {Array.from({ length: MIC_BARS }, (_, i) => (
+                    <span key={i} />
+                  ))}
+                </div>
+                음성 인식 중
+              </>
+            ) : (
+              MIC_LABEL[micStatus]
+            )}
+          </div>
+        )}
         <button className="toast-toggle" type="button" onClick={toggleToast} aria-pressed={toastEnabled}>
           {toastEnabled ? '🔔 알림 켜짐' : '🔕 알림 꺼짐'}
         </button>

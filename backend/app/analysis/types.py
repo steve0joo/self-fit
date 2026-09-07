@@ -3,11 +3,11 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-# 모델 출력 순서 (EmotionNet 원본 7클래스). 파인튜닝 모델 납품 시 확인 후 수정
-EMOTION_LABELS = ["기쁨", "당황", "분노", "불안", "상처", "슬픔", "중립"]
-# 서비스가 판정에 쓰는 4종. 1등이 여기 없으면 '기타' (재정규화하지 않는다)
-EMOTION_USED = {"중립", "불안", "당황", "기쁨"}
-EMOTION_OTHER = "기타"
+# 감정 모델 출력 순서. AI 팀 납품 v2 (ai/models/deliverable/meta.json, 2026-09-07): 4클래스
+EMOTION_LABELS = ["기쁨", "당황", "불안", "중립"]
+EMOTION_USED = set(EMOTION_LABELS)
+EMOTION_OTHER = "기타"  # 원본 7클래스 모델을 임시로 쓸 때 4종 밖 1등 (안전망)
+EMOTION_UNCERTAIN = "불확실"  # 추론 서버가 accepted=False 로 준 프레임 (τ 미달). 판정·분포에서 제외
 # Former-DFER 5클래스. 인덱스 순서는 AI-Hub 표기 순 가정 (03-for-ai.md 3절)
 ATTENTION_LABELS = ["집중", "졸림", "집중결핍", "집중하락", "태만"]
 ATTENTION_FOCUSED = "집중"
@@ -31,8 +31,10 @@ class GazeResult:
 
 @dataclass(frozen=True)
 class EmotionResult:
-    probs: dict[str, float]  # 모델 출력 그대로
-    top: str  # 4종 중 하나 또는 '기타'
+    probs: dict[str, float]  # 바이어스 적용 후 softmax 확률 (추론 서버 기준)
+    top: str  # 4종 중 하나, '기타'(안전망), 또는 '불확실'(accepted=False)
+    accepted: bool = True
+    confidence: float = 1.0
 
 
 @dataclass(frozen=True)

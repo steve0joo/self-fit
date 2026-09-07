@@ -242,6 +242,16 @@ reports (
 
 상태 전이: `created --(WS 연결 + start)--> running --(WS end 또는 /finish)--> finished`. WS가 끊긴 `running` 세션은 그대로 두고, FE가 다시 들어오면 `/finish`로 정리한다. 자동 정리는 Phase 3.
 
+### 5.2.1 녹화 (guideline/05, 2026-09-07 추가)
+| 메서드 | 경로 | 요청 | 응답 |
+|---|---|---|---|
+| POST | `/api/sessions/{id}/recording/chunks?seq=N` | multipart `chunk` (MediaRecorder webm 조각, 5MB 이하) | `204`. 같은 seq 재전송은 덮어씀. 세션이 `created`면 `409`, `finished` 후 5초 유예 |
+| GET | `/api/sessions/{id}/recording` | | `video/webm`, Range 지원. 없으면 `404` |
+
+저장: `MEDIA_DIR/{session_id}/chunks/NNNNNN.webm` → 종료(`end` 또는 `/finish`) 시 seq 순으로 이어 붙여 `recording.webm`. ffmpeg 가 있으면 `-c copy` remux 로 duration·cue 를 넣어 탐색 가능하게 함. 세션 삭제 시 폴더째 삭제.
+
+**개인정보 원칙 변경:** Phase 1 까지는 얼굴 원본을 저장하지 않았으나, 영상 타임스탬프 기능을 위해 **면접 녹화 영상을 로컬 디스크에 저장**한다. 본인만 조회 가능하고 세션 삭제와 함께 지워진다. (`01-dev-plan.md` 비기능 요구 갱신)
+
 ### 5.3 리포트
 | 메서드 | 경로 | 응답 |
 |---|---|---|
@@ -426,7 +436,7 @@ class InferenceClient(Protocol):
 |---|---|
 | `MediaPipeFaceDetector` | short-range 모델. 가장 큰 얼굴 1개. 박스는 정사각형으로 보정 |
 | `L2CSGaze` | 얼굴 박스에 **20% 여백**(7.1절) → RGB → 448×448 → ImageNet 정규화 → 90-bin softmax 기대값 ×4−180. GPU라 224 축소 불필요 |
-| `EmotionNet` | 얼굴 박스 **여백 없음** → 흑백 → 48×48 INTER_AREA → /255 → log-softmax → exp. `torch.load(...)['model']`. 확률 7개를 **그대로** 반환. 4종 판정은 BE 몫 |
+| `EmotionNet` v2 | 얼굴 박스 **여백 없음** → 흑백 → 48×48 **bilinear 늘림** → /255 → log-softmax **+ bias[0,1.4,0,1.9]** → softmax → `accepted = max ≥ τ(0.98)`. 4클래스 [기쁨, 당황, 불안, 중립]. `inference/.env` 로 v1(7클래스) 복귀 가능 |
 | `FormerDFER` | `session_id`별 버퍼의 112×112 크롭 16장 각각 RGB → /255 → `(1,16,3,112,112)` → fc(512,5) logit → softmax. `state_dict`의 `module.` 접두사 제거 후 로드. 얼굴이 3초 이상 없으면 버퍼 초기화 |
 
 모델 로드는 lifespan에서 1회, `DEVICE=cuda|cpu` 설정. 세 모델 합계 GPU 메모리 약 1GB.
@@ -561,6 +571,7 @@ Docker를 필수로 한 이유: 팀원 누구의 PC에서든 같은 PyTorch·CUD
 | 지연 | GPU(RTX 4060) 기준 640px JPEG 1장: 검출 5~9ms + 시선 9~12ms + 감정 3~5ms, 왕복 17~30ms. 3fps 에 여유 큼 |
 | compose env | `env_file` 은 빈 값 줄의 뒤 주석을 값으로 읽음 → `.env` 주석은 별도 줄에 |
 | WSL 포트 | Docker 가 게시한 포트는 WSL `localhost` 로도 열린다. 단, 컨테이너 기동 시 WSL 안에서 그 포트를 다른 프로세스가 쓰고 있으면 WSL 쪽 게시가 빠지므로 `ss -ltn` 으로 확인하고 비운 뒤 `docker compose up -d --force-recreate`. (2026-09-07 다른 프로젝트 Jupyter 커널이 9000 점유 → 종료 후 `localhost:9000` 정상) |
+| STT | faster-whisper small, float16, VAD 필터. 첫 로드 48초(가중치 460MB 다운로드 포함, 이후 캐시). 질문 경계에서 오디오를 자르므로 경계에 걸친 단어는 잘릴 수 있음(허용). 추론 서버 `/v1/transcribe` 는 webm·mp3·wav 모두 처리 |
 | 미검증 | 얼굴 크롭 여백 실측(안구 샘플 라벨 `pose.head` 단위 미확인), Former-DFER 인덱스 순서, 감정 모델 정확도 |
 
 ### 10.2 같은 네트워크(LAN)에서 팀원 접속
@@ -634,6 +645,9 @@ FE 담당자 확인이 필요한 결정. 답이 없으면 괄호 값으로 진�
 | 6 | 리포트 | `services/report_service.py`, `routers/reports.py` | **완료 (기본).** 5.6절 구조 전부 생성. 집계값 정밀 검증 테스트는 추가 예정 |
 | 7 | FE 통합 (Mock) | FE와 함께 실제 웹캠 시연 | 토스트·리포트 확인 |
 | 8 | 추론 서버 (Phase 2) | Docker Desktop 설치(선행), `inference/` 프로젝트, Dockerfile + compose, 모델 3개 이식, `/v1/*` | **완료 (2026-09-07).** `/v1/health`가 `cuda`, 샘플 추론 성공, 640px 프레임 기준 왕복 17~27ms. 단위 테스트 7개 |
-| 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | 진행 중. BE `.env` 전환 완료, 실제 웹캠 확인 대기 |
+| 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | **완료.** E2E 통과, 실제 웹캠 확인은 사용자 |
+| 10 | 녹화 업로드 (guideline/05 ①) | `routers/recordings.py`, `services/recording_service.py` | **완료 (2026-09-07).** 조각 업로드·합치기·Range 스트리밍·삭제, 테스트 6개, 실제 webm remux 검증 |
+| 11 | STT (guideline/05 ②) | 추론 서버 faster-whisper small `/v1/transcribe`, BE `stt_service` 질문 구간별 백그라운드 | **완료 (2026-09-07).** 한국어 TTS 16초 샘플 원문과 일치, GPU 처리 0.5~2초, 백엔드 E2E 통과. 테스트 3개(총 43) |
+| 12 | LLM 리포트 (guideline/05 ③) | `llm_service`: OpenAI gpt-4o-mini, JSON Schema 강제, STT 뒤 이어서 실행 | **완료 (2026-09-07).** 실제 호출 검증(8초), 가짜 클라이언트 테스트 4개(총 47). 키 없으면 skipped, 실패 시 failed |
 
 각 작업은 `dev`에서 브랜치를 따 PR로 합친다. 작업 1~3은 서로 독립이라 병렬 가능.

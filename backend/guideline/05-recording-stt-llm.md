@@ -1,0 +1,110 @@
+# 05. FE 계약: 녹화 업로드 · STT · LLM 리포트 · 영상 타임스탬프
+
+- 작성일: 2026-09-07 · 작성자: 박기호 (BE)
+- 상태: **계약 확정본 (BE 결정).** FE는 이 문서대로 붙이면 되고, 불편한 점은 구현 전에 알려 주세요.
+- 원칙: **기존 API·WebSocket은 바꾸지 않고 추가만** 합니다. 이미 붙인 면접·리포트 화면은 그대로 동작합니다.
+
+## 0. 한눈에
+```
+면접 중   FE: MediaRecorder(오디오+비디오 webm) → 3초마다 조각 업로드  POST /recording/chunks
+종료(end) BE: 조각 합치기 → 수치 리포트 즉시 생성(지금과 동일) → 백그라운드로 STT → LLM
+리포트    FE: GET /report 를 3초마다 다시 조회, status 가 done 이 될 때까지. 영상은 GET /recording 으로 재생
+```
+구현 순서(BE): ① 녹화 업로드 → ② STT → ③ LLM 리포트 → ④ 영상 재생 URL. **2026-09-07 기준 ①~④ 모두 완료.** FE 는 ①과 ④만 새 작업이고 ②③은 리포트 필드 추가입니다. `overview.frames_analyzed`(분석 프레임 수)가 추가되었고, 0 이면 행동 지표가 측정되지 않은 것이니 "데이터 없음"으로 표시하면 됩니다.
+
+## 1. 녹화와 업로드 (FE 작업 큼)
+
+### 1.1 녹화
+면접 화면에서 웹캠 스트림 하나로 **오디오+비디오를 같이** 녹화합니다. 프레임 전송(기존 WebSocket)과는 별개입니다.
+```ts
+const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: true });
+videoEl.srcObject = stream;                        // 화면 표시 + 기존 프레임 캡처에 그대로 사용
+const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus', videoBitsPerSecond: 800_000 });
+let seq = 0;
+rec.ondataavailable = async (e) => {
+  if (e.data.size === 0) return;
+  const fd = new FormData();
+  fd.append('chunk', e.data, `${seq}.webm`);
+  await apiFetchRaw(`/api/sessions/${sessionId}/recording/chunks?seq=${seq++}`, { method: 'POST', body: fd });
+};
+rec.start(3000);                                   // 3초마다 ondataavailable
+// 면접 종료(end 보내기 직전): rec.stop()  → 마지막 조각까지 업로드된 뒤 end 전송
+```
+- `mimeType` 은 Chrome/Edge 기준. 지원 안 하면 `MediaRecorder.isTypeSupported` 로 `video/webm` 폴백.
+- 비트레이트 800kbps → 5분에 약 30MB. 조각 하나 약 300KB (3초).
+- `apiFetchRaw` 는 기존 `apiFetch` 에서 `Content-Type: application/json` 을 빼고 FormData 를 그대로 보내는 버전. (JSON 헤더를 붙이면 multipart 가 깨집니다.)
+- **마이크 권한 거부 시**: 영상만 녹화(`audio: false`)하고 계속 진행. STT 는 비어 있는 채로 리포트가 나옵니다.
+- 재연결(`resume`) 시 `seq` 는 이어서 증가시키면 됩니다. 서버가 순서대로 붙입니다.
+
+### 1.1.1 마이크 상태 표시 (FE, 2026-09-07 추가)
+실시간 자막은 만들지 않습니다. 대신 사용자가 "음성이 녹음·인식되고 있다"는 것을 알 수 있게 면접 화면에 **마이크 아이콘 하나**만 둡니다. 서버 변경은 없고 FE 가 이미 아는 정보로 판단합니다.
+
+| 상태 | 조건 | 표시 |
+|---|---|---|
+| 인식 중 | MediaRecorder 가 `recording` 이고 스트림에 audio 트랙이 있으며, 마지막 조각 업로드가 성공(`204`) | 🎤 켜짐 + "음성 인식 중" (녹음 레벨 막대는 선택) |
+| 영상만 | 마이크 권한 거부로 `audio: false` 폴백 | 🎤 꺼짐(취소선) + "마이크 없음 — 답변 텍스트는 리포트에 포함되지 않아요" |
+| 업로드 실패 | 조각 업로드가 연속 2회 실패 | 🎤 경고색 + "녹음 전송이 불안정해요" (면접은 계속) |
+
+- 녹음 레벨 막대를 넣고 싶으면 `AudioContext` + `AnalyserNode` 로 스트림 볼륨을 읽으면 됩니다. 선택 사항입니다.
+- 실제 인식(STT)은 종료 후 서버에서 하므로, 이 표시는 "녹음이 서버에 잘 가고 있다"는 뜻입니다. 문구에 "인식 중"을 써도 사용자 입장에서는 같은 의미라 허용합니다.
+
+### 1.2 API
+| 메서드 | 경로 | 요청 | 응답 |
+|---|---|---|---|
+| POST | `/api/sessions/{id}/recording/chunks?seq=N` | multipart `chunk` (webm 조각) | `204`. 같은 seq 재전송은 덮어씀(멱등) |
+| GET | `/api/sessions/{id}/recording` | | webm 스트리밍 (`Range` 지원, `<video src>` 에 바로 사용). 없으면 `404` |
+
+조각은 세션 상태가 `running` 일 때만 받습니다. 종료 후 5초 안에 도착한 마지막 조각까지는 허용합니다 (조각 간격 3초보다 길게 잡은 유예).
+
+## 2. 리포트 확장 (FE 작업 작음)
+
+`GET /api/sessions/{id}/report` 응답에 아래가 **추가**됩니다. 기존 필드는 그대로입니다.
+```json
+{
+  "...기존 필드 그대로...": "",
+  "status": { "metrics": "done", "stt": "pending", "llm": "pending", "recording": "done" },
+  "recording": { "url": "/api/sessions/{id}/recording", "duration_ms": 312000 },
+  "transcript": [
+    { "question_index": 0, "text": "안녕하세요, 저는 ...", "words": 142, "speech_ms": 48000 }
+  ],
+  "llm": {
+    "summary": "전체 면접에 대한 3~4문장 총평",
+    "per_question": [ { "question_index": 0, "feedback": "답변 내용과 행동을 함께 본 피드백" } ],
+    "strengths": ["..."], "improvements": ["..."],
+    "model": "openai/gpt-4o-mini"
+  }
+}
+```
+| 필드 | 값 | FE 처리 |
+|---|---|---|
+| `status.*` | `pending` \| `running` \| `done` \| `failed` \| `skipped` | 하나라도 `pending`/`running` 이면 **3초 후 다시 GET**. `skipped` 는 마이크 없음 등으로 건너뜀 |
+| `transcript` | STT 완료 전엔 `[]` | 질문별 답변 텍스트 표시 |
+| `emotion_distribution` | 키가 **기쁨, 당황, 불안, 중립** 4개로 확정 (2026-09-07 감정 모델 v2). "기타" 키는 더 이상 오지 않음. 값은 판정이 채택된 프레임 기준 비율(합 1) |
+| `llm` | 완료 전엔 `null` | 총평·질문별 피드백·강점·개선점 표시. 기존 규칙 기반 `feedback` 은 그대로 남아 있으니 `llm` 이 `null` 일 때의 대체로 사용 |
+| `recording` | 녹화 없으면 `null` | 영상 플레이어 `src`. `status.recording` 이 `done` 이어야 재생 가능 |
+
+STT 는 5분 면접 기준 약 20~40초(실측: 16초 오디오 2초), LLM 은 약 8~20초(실측 8초) 걸립니다. 순서는 STT → LLM 이라 `status.llm` 이 `done` 이 되면 둘 다 끝난 것입니다. 리포트 화면에 "답변 분석 중…" 표시를 두면 됩니다.
+
+## 3. 영상 타임스탬프 (FE 작업 중간)
+리포트의 `timeline[].ts_ms` 는 **세션 시작 기준 경과 밀리초**이고, 녹화도 세션 시작 직후부터이므로 그대로 영상 시각입니다.
+```ts
+videoEl.currentTime = event.ts_ms / 1000;  videoEl.play();
+```
+- 타임라인 이벤트를 클릭하면 그 시각으로 이동. 서버 추가 작업 없음.
+- 녹화 시작이 `start` 보다 1~2초 늦을 수 있어 최대 그 정도 오차가 있습니다. 필요하면 `recording.offset_ms` 를 추가하겠습니다(현재는 0).
+
+## 4. FE 에 부탁하는 순서 (2026-09-07 갱신)
+| # | 작업 | 상태 |
+|---|---|---|
+| 1 | 1.1 녹화·업로드 (3초 조각) | **완료** (FE `56f46b7`). 백엔드에서 STT·LLM 까지 실제 동작 확인 |
+| 2 | 1.1.1 마이크 상태 아이콘 | **완료** (FE `05aa212`, 파형 막대 포함) |
+| 3 | 2절 리포트: `status.llm` 이 `done` 될 때까지 3초 재조회 + "답변 분석 중…" → `transcript`, `llm` 렌더링. `overview.frames_analyzed` 가 0 이면 "데이터 없음" | **완료** (FE `05aa212`) |
+| 4 | 3절 영상 플레이어 + 타임라인 클릭 이동 | **완료** (FE `05aa212`) |
+
+로컬 확인: `backend/.env` 에 `OPENAI_API_KEY`(비공개 전달), `STT_ENABLED=true`. Docker 없이 `INFERENCE_BACKEND=mock` 이면 STT 는 고정 문장, LLM 은 실제 결과가 옵니다.
+
+## 5. BE 쪽 구현 메모 (참고)
+- 저장: `backend/media/{session_id}/` 에 조각 저장 후 종료 시 하나로 합침. 배포 안 하므로 로컬 디스크. git 제외.
+- STT: 추론 서버에 faster-whisper **small** 모델(GPU, 한국어) 추가, `POST /v1/transcribe`. BE 가 ffmpeg 로 질문 구간(`session_questions.started_at~ended_at`)별 오디오를 잘라 전송. (팀 결정 2026-09-07)
+- LLM: **OpenAI API** (`gpt-4o-mini` 기본, `OPENAI_MODEL` 로 변경). 입력은 수치 리포트 + 질문·답변 텍스트, 출력은 위 `llm` 구조(JSON 강제). 키는 `backend/.env` 의 `OPENAI_API_KEY`, 절대 커밋하지 않음. (팀 결정 2026-09-07)
+- 백그라운드 작업: FastAPI `BackgroundTasks`. 상태는 `reports.summary.status` 에 기록.

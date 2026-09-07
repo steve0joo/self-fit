@@ -141,3 +141,22 @@ def test_session_survives_inference_failure(client, auth_ws):
         assert w.receive_json()["type"] == "report_ready"
     rep = client.get(f"/api/sessions/{sid}/report").json()
     assert rep["overview"]["face_found_rate"] == 0.0 and rep["overview"]["event_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_uncertain_emotion_parsed():
+    """accepted=False 는 top='불확실' 로 바뀌고 확률은 그대로 보존된다."""
+    from app.analysis.http_client import parse_analyze
+    from app.analysis.types import EMOTION_UNCERTAIN
+
+    d = dict(OK)
+    d["emotion"] = {
+        "probs": {"기쁨": 0.01, "당황": 0.44, "불안": 0.54, "중립": 0.01},
+        "top": "불안",
+        "accepted": False,
+        "confidence": 0.54,
+    }
+    r = parse_analyze(d, 1)
+    assert (
+        r.emotion.top == EMOTION_UNCERTAIN and r.emotion.accepted is False and r.emotion.probs["불안"] == 0.54
+    )

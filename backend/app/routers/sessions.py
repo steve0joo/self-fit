@@ -2,6 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
@@ -9,7 +10,7 @@ from app.auth import CurrentUserDep
 from app.db import get_db
 from app.models import Event, Session
 from app.schemas import EventOut, SessionCreate, SessionList, SessionListItem, SessionOut, SessionQuestionOut
-from app.services import report_service
+from app.services import recording_service, report_service, stt_service
 from app.services import session_service as svc
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -74,11 +75,13 @@ def detail(session_id: uuid.UUID, user: CurrentUserDep, db: DbDep, request: Requ
 
 
 @router.post("/{session_id}/finish")
-def finish(session_id: uuid.UUID, user: CurrentUserDep, db: DbDep):
-    """WebSocket 없이 강제 종료 (탭 닫힘 복구용). 리포트를 생성한다."""
+async def finish(session_id: uuid.UUID, user: CurrentUserDep, db: DbDep, request: Request):
+    """WebSocket 없이 강제 종료 (탭 닫힘 복구용). 리포트를 생성하고 STT 를 백그라운드로 건다."""
     s = svc.get_owned_session(db, session_id, uuid.UUID(user.id))
     svc.finish_session(db, s)
+    await run_in_threadpool(recording_service.assemble, session_id)
     report_service.save_report(db, s)
+    stt_service.schedule(session_id, request.app.state.inference_client)
     return {"status": "finished", "report_ready": True}
 
 
@@ -87,6 +90,7 @@ def delete(session_id: uuid.UUID, user: CurrentUserDep, db: DbDep):
     s = svc.get_owned_session(db, session_id, uuid.UUID(user.id))
     db.delete(s)
     db.commit()
+    recording_service.delete(session_id)  # 세션 삭제 시 영상도 삭제 (개인정보)
 
 
 @router.get("/{session_id}/events", response_model=list[EventOut])

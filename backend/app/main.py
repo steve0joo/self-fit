@@ -9,7 +9,7 @@ from app.analysis.client import build_client
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine, is_sqlite
 from app.models import Question
-from app.routers import health, me, questions, reports, sessions, ws
+from app.routers import health, me, questions, recordings, reports, sessions, ws
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -61,7 +61,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (health, me, questions, sessions, reports, ws):
+    for r in (health, me, questions, sessions, reports, recordings, ws):
         app.include_router(r.router)
     return app
 

@@ -1,7 +1,7 @@
 """Mock 추론 클라이언트 (Phase 1). 이벤트 규칙이 확실히 트리거되도록 시간에 따라 규칙적으로 변한다.
 
 - 시선: yaw 가 20초 주기 사인파(±30°). |yaw|>20° 구간이 주기마다 약 4.6초 지속 → gaze_off 발생
-- 감정: 기본 중립. 30초마다 6초 동안 불안 0.7 → emotion_negative 발생. 50초마다 3초 당황
+- 감정: 기본 중립. 30초마다 6초 동안 불안 0.7 → emotion_negative 발생. 50초마다 3초 당황. 4클래스, 항상 accepted
 - 집중: 기본 집중. 45초마다 8초 집중하락 0.7 → attention_low 발생. 처음 6초는 None(버퍼 미충족 흉내)
 - 얼굴: 70~74초 구간은 얼굴 없음 → face_lost 발생
 """
@@ -57,6 +57,17 @@ class MockInferenceClient:
             attention=attention,
             timing_ms={"mock": 0},
         )
+
+    async def transcribe(self, audio: bytes, language: str = "ko") -> dict:
+        # 오디오 길이와 무관하게 고정 문장. 리포트 흐름 검증용
+        text = "네, 저는 문제를 구조적으로 나누어 해결하는 편이고 팀과 소통하며 일하는 것을 좋아합니다."
+        return {
+            "text": text,
+            "segments": [{"start_ms": 0, "end_ms": 4000, "text": text}],
+            "language": language,
+            "duration_ms": 5000,
+            "speech_ms": 4000,
+        }
 
     async def health(self) -> dict:
         return {"status": "ok", "device": "mock", "models": {}}
