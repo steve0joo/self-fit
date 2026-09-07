@@ -97,9 +97,9 @@ videoEl.currentTime = event.ts_ms / 1000;  videoEl.play();
 | # | 작업 | 상태 |
 |---|---|---|
 | 1 | 1.1 녹화·업로드 (3초 조각) | **완료** (FE `56f46b7`). 백엔드에서 STT·LLM 까지 실제 동작 확인 |
-| 2 | 1.1.1 마이크 상태 아이콘 | 요청 중 |
-| 3 | 2절 리포트: `status.llm` 이 `done` 될 때까지 3초 재조회 + "답변 분석 중…" → `transcript`, `llm` 렌더링. `overview.frames_analyzed` 가 0 이면 "데이터 없음" | 요청 중 |
-| 4 | 3절 영상 플레이어 + 타임라인 클릭 이동 | 요청 중 |
+| 2 | 1.1.1 마이크 상태 아이콘 | **완료** (FE `05aa212`, 파형 막대 포함) |
+| 3 | 2절 리포트: `status.llm` 이 `done` 될 때까지 3초 재조회 + "답변 분석 중…" → `transcript`, `llm` 렌더링. `overview.frames_analyzed` 가 0 이면 "데이터 없음" | **완료** (FE `05aa212`) |
+| 4 | 3절 영상 플레이어 + 타임라인 클릭 이동 | **완료** (FE `05aa212`) |
 
 로컬 확인: `backend/.env` 에 `OPENAI_API_KEY`(비공개 전달), `STT_ENABLED=true`. Docker 없이 `INFERENCE_BACKEND=mock` 이면 STT 는 고정 문장, LLM 은 실제 결과가 옵니다.
 
