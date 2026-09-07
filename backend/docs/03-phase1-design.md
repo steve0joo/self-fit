@@ -560,7 +560,7 @@ Docker를 필수로 한 이유: 팀원 누구의 PC에서든 같은 PyTorch·CUD
 | 시선 확신도 | 90-bin softmax 최댓값은 정상 입력에서도 0.2~0.3 이라 BE 임계값(0.3)에 걸림 → **상위 3개 bin 확률 합의 평균**으로 정의 변경. 정상 입력에서 0.65~0.82 |
 | 지연 | GPU(RTX 4060) 기준 640px JPEG 1장: 검출 5~9ms + 시선 9~12ms + 감정 3~5ms, 왕복 17~30ms. 3fps 에 여유 큼 |
 | compose env | `env_file` 은 빈 값 줄의 뒤 주석을 값으로 읽음 → `.env` 주석은 별도 줄에 |
-| WSL 포트 | 이 노트북은 다른 프로젝트의 Jupyter 커널이 WSL `127.0.0.1:9000` 을 점유해 BE 가 `localhost:9000` 으로 못 붙음. 임시로 `INFERENCE_URL=http://172.31.224.1:9000`(Windows 호스트) 사용. 커널을 끄거나 포트를 바꾸면 `localhost` 로 복귀 |
+| WSL 포트 | Docker 가 게시한 포트는 WSL `localhost` 로도 열린다. 단, 컨테이너 기동 시 WSL 안에서 그 포트를 다른 프로세스가 쓰고 있으면 WSL 쪽 게시가 빠지므로 `ss -ltn` 으로 확인하고 비운 뒤 `docker compose up -d --force-recreate`. (2026-09-07 다른 프로젝트 Jupyter 커널이 9000 점유 → 종료 후 `localhost:9000` 정상) |
 | 미검증 | 얼굴 크롭 여백 실측(안구 샘플 라벨 `pose.head` 단위 미확인), Former-DFER 인덱스 순서, 감정 모델 정확도 |
 
 ### 10.2 같은 네트워크(LAN)에서 팀원 접속
