@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ToastStack, { ToastItem } from '../components/ToastStack';
-import { apiFetch, getWsUrl } from '@/lib/api';
+import { apiFetch, apiFetchRaw, getWsUrl } from '@/lib/api';
 import { getSupabase } from '@/lib/supabase';
 
 const QUESTIONS = [
@@ -30,6 +30,10 @@ const REPORT_FALLBACK_MS = 3000;
 const TOAST_TTL_MS = 4000;
 const MOCK_TOAST_INTERVAL_MS = 5000;
 const TOAST_PREF_KEY = 'selffit:toastEnabled';
+const RECORD_TIMESLICE_MS = 3000;
+const RECORD_MIME = 'video/webm;codecs=vp8,opus';
+const RECORD_MIME_FALLBACK = 'video/webm';
+const RECORD_VIDEO_BPS = 800_000;
 
 function readToastPref(): boolean {
   if (typeof window === 'undefined') return true;
@@ -89,6 +93,13 @@ function InterviewSession() {
   const retryRef = useRef(0);
   const teardownRef = useRef(false);
   const navigatedRef = useRef(false);
+
+  // 녹화(MediaRecorder) — 3fps 프레임 전송과는 완전히 독립적으로 동작한다.
+  const streamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const seqRef = useRef(0);
+  const [streamReady, setStreamReady] = useState(false);
+  const [recordingSessionId, setRecordingSessionId] = useState<string | null>(null);
   const [toastEnabled, setToastEnabled] = useState(true);
   const toastEnabledRef = useRef(true);
   toastEnabledRef.current = toastEnabled;
@@ -146,6 +157,32 @@ function InterviewSession() {
       );
     }, FRAME_INTERVAL_MS);
   }, [stopFrames]);
+
+  const uploadChunk = useCallback(async (sessionId: string, seq: number, blob: Blob) => {
+    const form = new FormData();
+    form.append('chunk', blob, `chunk-${seq}.webm`);
+    try {
+      const res = await apiFetchRaw(`/api/sessions/${sessionId}/recording/chunks?seq=${seq}`, {
+        method: 'POST',
+        body: form,
+      });
+      if (!res.ok) throw new Error(`POST recording/chunks?seq=${seq} → ${res.status}`);
+      console.log(`[interview] 녹화 청크 업로드 완료 seq=${seq} (${blob.size} bytes)`);
+    } catch (e) {
+      console.warn(`[interview] 녹화 청크 업로드 실패 seq=${seq} — 면접은 계속 진행합니다.`, e);
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (!rec || rec.state === 'inactive') return;
+    try {
+      rec.stop(); // 남은 버퍼가 ondataavailable로 한 번 더 떨어져 마지막 청크까지 업로드된다.
+    } catch (e) {
+      console.warn('[interview] 녹화 중지 실패', e);
+    }
+  }, []);
 
   const goReport = useCallback(() => {
     if (navigatedRef.current) return;
@@ -231,16 +268,78 @@ function InterviewSession() {
     [goReport, showToast, startFrames, stopFrames]
   );
 
+  // 스트림과 세션 id가 모두 준비됐을 때만 녹화를 시작한다.
+  // 세션이 없는 로컬 폴백 모드에서는 업로드할 곳이 없으므로 녹화 자체를 하지 않는다.
+  useEffect(() => {
+    if (!streamReady || !recordingSessionId) return;
+    const stream = streamRef.current;
+    if (!stream) return;
+    if (typeof MediaRecorder === 'undefined') {
+      console.warn('[interview] 이 브라우저는 MediaRecorder를 지원하지 않습니다 — 녹화를 건너뜁니다.');
+      return;
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported(RECORD_MIME) ? RECORD_MIME : RECORD_MIME_FALLBACK;
+    let rec: MediaRecorder;
+    try {
+      rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: RECORD_VIDEO_BPS });
+    } catch (e) {
+      console.warn('[interview] MediaRecorder 생성 실패 — 녹화 없이 진행합니다.', e);
+      return;
+    }
+
+    rec.ondataavailable = (e) => {
+      if (!e.data || e.data.size === 0) return;
+      const seq = seqRef.current; // 재연결(resume) 후에도 초기화하지 않고 이어서 증가
+      seqRef.current += 1;
+      void uploadChunk(recordingSessionId, seq, e.data);
+    };
+    rec.onerror = (e) => console.warn('[interview] 녹화 오류', e);
+
+    mediaRecorderRef.current = rec;
+    try {
+      rec.start(RECORD_TIMESLICE_MS);
+      console.log(`[interview] 녹화 시작 (${mimeType}, ${RECORD_TIMESLICE_MS}ms 단위)`);
+    } catch (e) {
+      console.warn('[interview] 녹화 시작 실패 — 녹화 없이 진행합니다.', e);
+      mediaRecorderRef.current = null;
+    }
+
+    return () => stopRecording();
+  }, [recordingSessionId, stopRecording, streamReady, uploadChunk]);
+
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let cancelled = false;
+
+    const attach = (s: MediaStream) => {
+      if (cancelled) {
+        s.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      stream = s;
+      streamRef.current = s;
+      if (videoRef.current) videoRef.current.srcObject = s;
+      setStreamReady(true);
+    };
+
     navigator.mediaDevices
-      ?.getUserMedia({ video: true })
-      .then((s) => {
-        stream = s;
-        if (videoRef.current) videoRef.current.srcObject = s;
-      })
-      .catch(() => setCameraError(true));
-    return () => stream?.getTracks().forEach((t) => t.stop());
+      ?.getUserMedia({ video: true, audio: true })
+      .then(attach)
+      .catch((e) => {
+        // 마이크가 거부/부재여도 영상만으로 계속 진행한다.
+        console.warn('[interview] 오디오 포함 getUserMedia 실패 — 영상만으로 재시도합니다.', e);
+        return navigator.mediaDevices
+          ?.getUserMedia({ video: true, audio: false })
+          .then(attach)
+          .catch(() => setCameraError(true));
+      });
+
+    return () => {
+      cancelled = true;
+      streamRef.current = null;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
 
   useEffect(() => {
@@ -274,6 +373,7 @@ function InterviewSession() {
         if (!token) throw new Error('access_token 없음');
         sessionIdRef.current = session.id;
         tokenRef.current = token;
+        setRecordingSessionId(session.id);
         if (session.questions?.length) {
           setQuestions(
             [...session.questions].sort((a, b) => a.order_index - b.order_index).map((q) => q.text)
@@ -313,6 +413,7 @@ function InterviewSession() {
     const open = ws?.readyState === WebSocket.OPEN;
 
     if (isLast) {
+      stopRecording(); // end 전에 멈춰서 마지막 청크까지 업로드되도록 한다.
       if (open) {
         stopFrames();
         ws!.send(JSON.stringify({ type: 'end' }));
