@@ -18,6 +18,9 @@ class GazeOut(BaseModel):
 class ProbsOut(BaseModel):
     probs: dict[str, float]
     top: str
+    # 감정만 채운다. top-1 확률이 tau 이상인지 — 즉 이 프레임의 판정을 믿을지 여부.
+    # 버릴지 말지는 백엔드 판정 규칙이 정한다 (06-backend-handoff.md 4.4절)
+    accepted: bool | None = None
 
 
 class AnalyzeOut(BaseModel):

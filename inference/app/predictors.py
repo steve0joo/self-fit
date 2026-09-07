@@ -8,14 +8,15 @@ import torch
 import torch.nn.functional as F
 from torchvision.models.resnet import Bottleneck
 
+from app.emotion_contract import load_emotion_contract
 from app.models.emotionnet import EmotionNet
 from app.models.former import GenerateModel
 from app.models.l2cs_net import L2CS
 
 log = logging.getLogger("inference.models")
 
-# 클래스 순서 (03-for-ai.md). 감정은 원본 7클래스, 집중은 AI-Hub 표기 순 가정
-EMOTION_LABELS = ["기쁨", "당황", "분노", "불안", "상처", "슬픔", "중립"]
+# 감정 클래스는 납품 meta.json 이 정한다 (app/emotion_contract.py).
+# 집중 5클래스. 인덱스 순서는 AI-Hub 표기 순 가정 (03-for-ai.md 3절)
 ATTENTION_LABELS = ["집중", "졸림", "집중결핍", "집중하락", "태만"]
 
 
@@ -72,20 +73,33 @@ class GazeModel:
 
 
 class EmotionModel:
-    """EmotionNet 7클래스. 출력이 log_softmax 이므로 exp 로 확률화 (원본 video.py 와 동일)."""
+    """EmotionNet 파인튜닝본. 판정 계약은 ai/docs/06-backend-handoff.md 4절:
 
-    name = "emotionnet_v1"
+        prob = softmax(model(x) + bias);  top = argmax(prob);  accepted = prob.max() >= tau
 
-    def __init__(self, weights: Path, device: str):
+    bias 는 argmax 이전, tau 비교 이전에 더한다 — softmax 이후에 더하면 틀린다. 학습이 클래스당
+    6,800개로 균형을 맞춘 탓에 모델은 균등 prior 를 학습했고, 중립이 지배적인 면접 스트림에서는
+    bias 없이 중립 프레임의 16.8%를 불안으로 부른다(bias 적용 시 7.65%).
+    """
+
+    def __init__(self, weights: Path, meta: Path, device: str):
+        self.name = weights.stem
         self.device = device
-        self.model = EmotionNet(num_classes=7)
+        contract = load_emotion_contract(meta)
+        self.labels, self.tau = contract.labels, contract.tau
+        self.model = EmotionNet(num_classes=len(self.labels))
         self.model.load_state_dict(_load(weights)["model"])
         self.model.eval().to(device)
+        self.bias = torch.tensor(contract.bias, dtype=torch.float32, device=device)
+        log.info("emotion contract: %s bias=%s tau=%s", self.labels, contract.bias, self.tau)
 
     @torch.inference_mode()
-    def predict(self, x: torch.Tensor) -> dict[str, float]:
-        out = torch.exp(self.model(x.to(self.device)))[0].cpu().numpy()
-        return {lab: round(float(p), 4) for lab, p in zip(EMOTION_LABELS, out, strict=True)}
+    def predict(self, x: torch.Tensor) -> tuple[dict[str, float], bool]:
+        """(클래스별 확률, tau 통과 여부). 모델 출력은 LogSoftmax 라 bias 를 그대로 더할 수 있다."""
+        logprob = self.model(x.to(self.device))
+        prob = F.softmax(logprob + self.bias, dim=1)[0].cpu().numpy()
+        accepted = bool(prob.max() >= self.tau)
+        return {lab: round(float(p), 4) for lab, p in zip(self.labels, prob, strict=True)}, accepted
 
 
 class AttentionModel:

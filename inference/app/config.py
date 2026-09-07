@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     max_image_bytes: int = Field(default=1_048_576)
 
     gaze_weights: str = "l2cs_v1.pkl"
-    emotion_weights: str = "emotionnet_v1.pth"
+    emotion_weights: str = "emotionnet_v2.pth"
+    # 가중치와 같은 디렉터리에 함께 배포한다. 클래스 순서·bias·tau 가 여기서 온다 (06-backend-handoff.md 2절)
+    emotion_meta: str = "emotionnet_v2.meta.json"
     attention_weights: str = "former_dfer_v1.pth"
 
     gaze_input_size: int = 448  # L2CS 검증 스크립트 기준. 224 로 줄이면 빠르지만 정확도 측정 필요

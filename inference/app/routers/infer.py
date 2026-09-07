@@ -47,14 +47,21 @@ async def analyze(request: Request, session_id: str = Query(..., min_length=1), 
         st.attention_buffer.push(session_id, None)
         return AnalyzeOut(face_found=False, timing_ms=timing)
 
+    # 시선·집중은 정사각 크롭을 전제로 검증된 모델이라 기존 동작을 유지한다. 감정만 학습과 같은
+    # 원본 박스·0% 마진·클리핑(패딩 없음)을 쓴다 — 06-backend-handoff.md 3.2절.
+    face_square = face.squared()
+
     t = time.perf_counter()
-    yaw, pitch, conf = st.gaze.predict(pp.gaze_tensor(pp.crop(bgr, face, settings.gaze_crop_margin), settings.gaze_input_size))
+    yaw, pitch, conf = st.gaze.predict(
+        pp.gaze_tensor(pp.crop(bgr, face_square, settings.gaze_crop_margin), settings.gaze_input_size)
+    )
     timing["gaze"] = int((time.perf_counter() - t) * 1000)
 
     t = time.perf_counter()
-    face_tight = pp.crop(bgr, face, 0.0)
-    emo = st.emotion.predict(pp.emotion_tensor(face_tight))
+    emo, emo_accepted = st.emotion.predict(pp.emotion_tensor(pp.crop(bgr, face, 0.0, pad=False)))
     timing["emotion"] = int((time.perf_counter() - t) * 1000)
+
+    face_tight = pp.crop(bgr, face_square, 0.0)
 
     t = time.perf_counter()
     ready, frames = st.attention_buffer.push(session_id, pp.attention_frame(face_tight))
@@ -68,7 +75,7 @@ async def analyze(request: Request, session_id: str = Query(..., min_length=1), 
         face_found=True,
         face=FaceOut(x=face.x, y=face.y, w=face.w, h=face.h, score=round(face.score, 3)),
         gaze=GazeOut(yaw_deg=round(yaw, 2), pitch_deg=round(pitch, 2), confidence=round(conf, 3)),
-        emotion=ProbsOut(probs=emo, top=top_of(emo)),
+        emotion=ProbsOut(probs=emo, top=top_of(emo), accepted=emo_accepted),
         attention=None if att_last is None else ProbsOut(probs=att_last, top=top_of(att_last)),
         timing_ms=timing,
     )

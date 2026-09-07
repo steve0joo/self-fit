@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
         device = "cpu"
     wd = Path(s.model_dir)
     app.state.gaze = predictors.GazeModel(wd / s.gaze_weights, device)
-    app.state.emotion = predictors.EmotionModel(wd / s.emotion_weights, device)
+    app.state.emotion = predictors.EmotionModel(wd / s.emotion_weights, wd / s.emotion_meta, device)
     app.state.attention = predictors.AttentionModel(wd / s.attention_weights, device)
     app.state.detector = FaceDetector()
     app.state.attention_buffer = AttentionBuffer(s.attention_window, s.attention_interval_s, s.attention_reset_s, s.session_ttl_s)
