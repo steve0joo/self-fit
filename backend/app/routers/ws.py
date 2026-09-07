@@ -91,8 +91,8 @@ async def session_ws(ws: WebSocket, session_id: uuid.UUID, token: str | None = N
                 )
             elif mtype == "question":
                 try:
-                    svc.advance_question(db, s, int(data.get("index", -1)))
-                    await ws.send_json({"type": "question_ack", "index": int(data["index"])})
+                    applied = svc.advance_question(db, s, int(data.get("index", -1)))
+                    await ws.send_json({"type": "question_ack", "index": applied})
                 except Exception as e:  # noqa: BLE001 - 잘못된 입력은 연결을 끊지 않고 error 로 회신
                     await ws.send_json(
                         {"type": "error", "code": "bad_question", "message": str(getattr(e, "detail", e))}

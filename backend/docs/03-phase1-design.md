@@ -314,7 +314,7 @@ FE 리포트 화면(시선 유지율, 안정 표정 비율, 알림 횟수, 질�
 | text | `{"type":"start"}` | 세션 시작. 서버가 `started_at` 기록, 질문 0 시작. 프레임은 `start` 이후에만 처리됨 |
 | binary | JPEG bytes | 웹캠 프레임. **권장 224×224 이하, 품질 70, 3fps.** 서버가 수신 시각을 `ts_ms`로 기록 |
 | text | `{"type":"resume"}` | 재연결 시. 세션이 `running`이면 그대로 이어 감. `created`면 `start`와 동일 처리 |
-| text | `{"type":"question","index":1}` | 질문 전환. 이전 질문 `ended_at`, 새 질문 `started_at` 기록 |
+| text | `{"type":"question","index":1}` | 질문 전환. 이전 질문 `ended_at`, 새 질문 `started_at` 기록. **앞으로만 간다**: 현재 번호 이하가 오면 무시하고 `question_ack`에 현재 번호를 돌려줌 (2026-09-06 QA 후 추가) |
 | text | `{"type":"end"}` | 면접 종료 요청. 서버가 리포트 생성 후 `report_ready` 송신하고 연결 종료 |
 | text | `{"type":"ping"}` | 15초 간격 keepalive (선택) |
 
@@ -326,7 +326,7 @@ FE 리포트 화면(시선 유지율, 안정 표정 비율, 알림 횟수, 질�
 | `{"type":"pong"}` | `ping` 응답 |
 | `{"type":"result","ts_ms":12345,"face_found":true,"gaze":{"yaw":-3.2,"pitch":5.1,"state":"center"},"emotion":{"top":"중립","probs":{...}},"attention":{"top":"집중","probs":{...}}}` | 프레임마다. `attention`은 버퍼가 16장 차기 전까지 `null`. FE는 표시하지 않아도 됨(디버그 오버레이용) |
 | `{"type":"event","ts_ms":15000,"event_type":"gaze_off","severity":"warn","icon":"👁️","message":"시선이 화면 밖으로 벗어났어요"}` | 판정 이벤트. FE `ToastStack` 형식과 동일한 `icon`, `message`. **표시 여부는 FE의 사용자 설정이 결정**한다. BE는 설정과 무관하게 항상 보내고 DB에 기록한다 |
-| `{"type":"question_ack","index":1}` | 질문 전환 반영 확인 |
+| `{"type":"question_ack","index":1}` | 질문 전환 반영 확인. `index`는 **실제 적용된 번호** |
 | `{"type":"report_ready","session_id":"..."}` | 종료 처리 완료. FE는 리포트 화면으로 이동 |
 | `{"type":"error","code":"frame_decode_failed","message":"..."}` | 복구 가능한 오류. 연결 유지 |
 

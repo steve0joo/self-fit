@@ -85,7 +85,7 @@ BE가 보내는 메시지:
 | `started` | start/resume 처리 후 | `{status, question_index}`. 이 뒤부터 프레임을 보내면 됨 |
 | `event` | 판정 규칙에 걸릴 때 | `{icon, message, event_type, severity}`. 토스트가 **켜져 있으면** 그대로 띄우고, 꺼져 있으면 무시. BE는 설정과 무관하게 항상 보냄 |
 | `result` | 프레임마다 | 시선·감정·집중 수치. MVP에서는 무시해도 됨 |
-| `question_ack` | 질문 전환 반영 후 | `{index}` |
+| `question_ack` | 질문 전환 반영 후 | `{index}` = 실제 적용된 번호. 서버는 앞으로만 넘어가며 같은 번호·이전 번호는 무시 |
 | `report_ready` | end 처리 후 | 리포트 화면으로 이동 |
 | `error` | 복구 가능한 오류 | `{code, message}`. 연결은 유지됨 |
 
