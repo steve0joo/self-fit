@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     stt_language: str = Field(default="ko")
     openai_api_key: str = Field(default="")
     openai_model: str = Field(default="gpt-4o-mini")
+    openai_timeout_s: float = Field(default=60.0)
 
     # 이벤트 판정 임계값 (03-phase1-design.md 8절)
     gaze_yaw_threshold_deg: float = 20.0

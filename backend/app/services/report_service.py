@@ -38,6 +38,7 @@ def _metrics(logs: list[AnalysisLog], events: list[Event]) -> dict:
         "attention_rate": _rate(att.get(ATTENTION_FOCUSED, 0), len(with_att)),
         "face_found_rate": _rate(len(valid), len([l for l in logs if l.face_found is not None])),
         "event_count": len(events),
+        "frames_analyzed": len(logs),  # 0 이면 행동 지표가 측정되지 않은 것
         "_emo": emo,
         "_att": att,
         "_valid": len(valid),
@@ -86,7 +87,7 @@ def build_report(db: DbSession, s: Session) -> dict:
             "recording": "done" if recording else "skipped",
             # stt 는 stt_service.schedule 이 pending→running→done 으로 갱신. llm 은 구현 전까지 skipped
             "stt": "pending" if (get_settings().stt_enabled and recording) else "skipped",
-            "llm": "skipped",
+            "llm": "pending" if get_settings().openai_api_key else "skipped",
         },
         "recording": recording,
         "transcript": [],
@@ -99,6 +100,7 @@ def build_report(db: DbSession, s: Session) -> dict:
                 "attention_rate",
                 "face_found_rate",
                 "event_count",
+                "frames_analyzed",
             )
         },
         "emotion_distribution": emotion_distribution,

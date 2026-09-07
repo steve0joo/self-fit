@@ -10,6 +10,7 @@ os.environ["INFERENCE_BACKEND"] = "mock"
 os.environ["APP_ENV"] = "test"
 os.environ["MEDIA_DIR"] = "./test_media"
 os.environ["STT_ENABLED"] = "false"
+os.environ["OPENAI_API_KEY"] = ""
 
 import pytest
 from fastapi import Request

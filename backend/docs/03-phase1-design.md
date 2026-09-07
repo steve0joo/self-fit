@@ -648,6 +648,6 @@ FE 담당자 확인이 필요한 결정. 답이 없으면 괄호 값으로 진�
 | 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | **완료.** E2E 통과, 실제 웹캠 확인은 사용자 |
 | 10 | 녹화 업로드 (guideline/05 ①) | `routers/recordings.py`, `services/recording_service.py` | **완료 (2026-09-07).** 조각 업로드·합치기·Range 스트리밍·삭제, 테스트 6개, 실제 webm remux 검증 |
 | 11 | STT (guideline/05 ②) | 추론 서버 faster-whisper small `/v1/transcribe`, BE `stt_service` 질문 구간별 백그라운드 | **완료 (2026-09-07).** 한국어 TTS 16초 샘플 원문과 일치, GPU 처리 0.5~2초, 백엔드 E2E 통과. 테스트 3개(총 43) |
-| 12 | LLM 리포트 (guideline/05 ③) | OpenAI gpt-4o-mini, 백그라운드, `status` 갱신 | 예정 |
+| 12 | LLM 리포트 (guideline/05 ③) | `llm_service`: OpenAI gpt-4o-mini, JSON Schema 강제, STT 뒤 이어서 실행 | **완료 (2026-09-07).** 실제 호출 검증(8초), 가짜 클라이언트 테스트 4개(총 47). 키 없으면 skipped, 실패 시 failed |
 
 각 작업은 `dev`에서 브랜치를 따 PR로 합친다. 작업 1~3은 서로 독립이라 병렬 가능.
