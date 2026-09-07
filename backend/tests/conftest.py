@@ -9,6 +9,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 os.environ["INFERENCE_BACKEND"] = "mock"
 os.environ["APP_ENV"] = "test"
 os.environ["MEDIA_DIR"] = "./test_media"
+os.environ["STT_ENABLED"] = "false"
 
 import pytest
 from fastapi import Request

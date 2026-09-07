@@ -571,6 +571,7 @@ Docker를 필수로 한 이유: 팀원 누구의 PC에서든 같은 PyTorch·CUD
 | 지연 | GPU(RTX 4060) 기준 640px JPEG 1장: 검출 5~9ms + 시선 9~12ms + 감정 3~5ms, 왕복 17~30ms. 3fps 에 여유 큼 |
 | compose env | `env_file` 은 빈 값 줄의 뒤 주석을 값으로 읽음 → `.env` 주석은 별도 줄에 |
 | WSL 포트 | Docker 가 게시한 포트는 WSL `localhost` 로도 열린다. 단, 컨테이너 기동 시 WSL 안에서 그 포트를 다른 프로세스가 쓰고 있으면 WSL 쪽 게시가 빠지므로 `ss -ltn` 으로 확인하고 비운 뒤 `docker compose up -d --force-recreate`. (2026-09-07 다른 프로젝트 Jupyter 커널이 9000 점유 → 종료 후 `localhost:9000` 정상) |
+| STT | faster-whisper small, float16, VAD 필터. 첫 로드 48초(가중치 460MB 다운로드 포함, 이후 캐시). 질문 경계에서 오디오를 자르므로 경계에 걸친 단어는 잘릴 수 있음(허용). 추론 서버 `/v1/transcribe` 는 webm·mp3·wav 모두 처리 |
 | 미검증 | 얼굴 크롭 여백 실측(안구 샘플 라벨 `pose.head` 단위 미확인), Former-DFER 인덱스 순서, 감정 모델 정확도 |
 
 ### 10.2 같은 네트워크(LAN)에서 팀원 접속
@@ -646,7 +647,7 @@ FE 담당자 확인이 필요한 결정. 답이 없으면 괄호 값으로 진�
 | 8 | 추론 서버 (Phase 2) | Docker Desktop 설치(선행), `inference/` 프로젝트, Dockerfile + compose, 모델 3개 이식, `/v1/*` | **완료 (2026-09-07).** `/v1/health`가 `cuda`, 샘플 추론 성공, 640px 프레임 기준 왕복 17~27ms. 단위 테스트 7개 |
 | 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | **완료.** E2E 통과, 실제 웹캠 확인은 사용자 |
 | 10 | 녹화 업로드 (guideline/05 ①) | `routers/recordings.py`, `services/recording_service.py` | **완료 (2026-09-07).** 조각 업로드·합치기·Range 스트리밍·삭제, 테스트 6개, 실제 webm remux 검증 |
-| 11 | STT (guideline/05 ②) | 추론 서버 faster-whisper small, `/v1/transcribe`, 질문 구간별 | 예정 |
+| 11 | STT (guideline/05 ②) | 추론 서버 faster-whisper small `/v1/transcribe`, BE `stt_service` 질문 구간별 백그라운드 | **완료 (2026-09-07).** 한국어 TTS 16초 샘플 원문과 일치, GPU 처리 0.5~2초, 백엔드 E2E 통과. 테스트 3개(총 43) |
 | 12 | LLM 리포트 (guideline/05 ③) | OpenAI gpt-4o-mini, 백그라운드, `status` 갱신 | 예정 |
 
 각 작업은 `dev`에서 브랜치를 따 PR로 합친다. 작업 1~3은 서로 독립이라 병렬 가능.

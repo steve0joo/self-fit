@@ -17,7 +17,7 @@ from app.auth import get_current_user
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Session
-from app.services import recording_service, report_service
+from app.services import recording_service, report_service, stt_service
 from app.services import session_service as svc
 from app.services.live_session import LiveSession
 
@@ -103,6 +103,7 @@ async def session_ws(ws: WebSocket, session_id: uuid.UUID, token: str | None = N
                 svc.finish_session(db, s)
                 await run_in_threadpool(recording_service.assemble, session_id)
                 report_service.save_report(db, s)
+                stt_service.schedule(session_id, ws.app.state.inference_client)
                 await ws.send_json({"type": "report_ready", "session_id": str(session_id)})
                 await ws.close(code=1000)
                 break
