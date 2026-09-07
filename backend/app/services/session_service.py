@@ -76,21 +76,32 @@ def start_session(db: DbSession, s: Session) -> None:
     db.commit()
 
 
-def advance_question(db: DbSession, s: Session, index: int) -> None:
+def advance_question(db: DbSession, s: Session, index: int) -> int:
+    """질문 전환. 앞으로만 간다(단조 증가). 같은 번호나 이전 번호가 오면 무시하고 현재 번호를 돌려준다.
+
+    FE 가 빠른 클릭·재전송으로 번호를 중복하거나 뒤섞어 보내도 started_at/ended_at 이 역전되지 않는다.
+    건너뛴 질문은 시작되지 않은 채(duration 0) 남는다.
+    """
     if index < 0 or index >= len(s.questions):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"질문 index 범위 밖: {index}")
+    cur = current_question_index(s)
+    if cur is not None and index <= cur:
+        return cur
     t = now()
     for q in s.questions:
-        if q.started_at is not None and q.ended_at is None and q.order_index != index:
+        if q.order_index < index and q.started_at is not None and q.ended_at is None:
             q.ended_at = t
-    if s.questions[index].started_at is None:
-        s.questions[index].started_at = t
+    target = next(q for q in s.questions if q.order_index == index)
+    if target.started_at is None:
+        target.started_at = t
     db.commit()
+    return index
 
 
 def current_question_index(s: Session) -> int | None:
-    open_qs = [q for q in s.questions if q.started_at is not None and q.ended_at is None]
-    return open_qs[-1].order_index if open_qs else None
+    """시작됐고 아직 끝나지 않은 질문 중 가장 큰 번호. 없으면 None."""
+    open_qs = [q.order_index for q in s.questions if q.started_at is not None and q.ended_at is None]
+    return max(open_qs) if open_qs else None
 
 
 def finish_session(db: DbSession, s: Session) -> None:

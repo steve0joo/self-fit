@@ -1,0 +1,9 @@
+# torch / torchvision 은 베이스 이미지(pytorch/pytorch:*-cuda*)에 포함
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic-settings>=2.4
+mediapipe==0.10.14
+einops>=0.8
+opencv-python-headless>=4.10
+numpy<2
+pillow>=10

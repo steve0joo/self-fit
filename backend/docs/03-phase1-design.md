@@ -314,7 +314,7 @@ FE 리포트 화면(시선 유지율, 안정 표정 비율, 알림 횟수, 질�
 | text | `{"type":"start"}` | 세션 시작. 서버가 `started_at` 기록, 질문 0 시작. 프레임은 `start` 이후에만 처리됨 |
 | binary | JPEG bytes | 웹캠 프레임. **권장 224×224 이하, 품질 70, 3fps.** 서버가 수신 시각을 `ts_ms`로 기록 |
 | text | `{"type":"resume"}` | 재연결 시. 세션이 `running`이면 그대로 이어 감. `created`면 `start`와 동일 처리 |
-| text | `{"type":"question","index":1}` | 질문 전환. 이전 질문 `ended_at`, 새 질문 `started_at` 기록 |
+| text | `{"type":"question","index":1}` | 질문 전환. 이전 질문 `ended_at`, 새 질문 `started_at` 기록. **앞으로만 간다**: 현재 번호 이하가 오면 무시하고 `question_ack`에 현재 번호를 돌려줌 (2026-09-06 QA 후 추가) |
 | text | `{"type":"end"}` | 면접 종료 요청. 서버가 리포트 생성 후 `report_ready` 송신하고 연결 종료 |
 | text | `{"type":"ping"}` | 15초 간격 keepalive (선택) |
 
@@ -326,7 +326,7 @@ FE 리포트 화면(시선 유지율, 안정 표정 비율, 알림 횟수, 질�
 | `{"type":"pong"}` | `ping` 응답 |
 | `{"type":"result","ts_ms":12345,"face_found":true,"gaze":{"yaw":-3.2,"pitch":5.1,"state":"center"},"emotion":{"top":"중립","probs":{...}},"attention":{"top":"집중","probs":{...}}}` | 프레임마다. `attention`은 버퍼가 16장 차기 전까지 `null`. FE는 표시하지 않아도 됨(디버그 오버레이용) |
 | `{"type":"event","ts_ms":15000,"event_type":"gaze_off","severity":"warn","icon":"👁️","message":"시선이 화면 밖으로 벗어났어요"}` | 판정 이벤트. FE `ToastStack` 형식과 동일한 `icon`, `message`. **표시 여부는 FE의 사용자 설정이 결정**한다. BE는 설정과 무관하게 항상 보내고 DB에 기록한다 |
-| `{"type":"question_ack","index":1}` | 질문 전환 반영 확인 |
+| `{"type":"question_ack","index":1}` | 질문 전환 반영 확인. `index`는 **실제 적용된 번호** |
 | `{"type":"report_ready","session_id":"..."}` | 종료 처리 완료. FE는 리포트 화면으로 이동 |
 | `{"type":"error","code":"frame_decode_failed","message":"..."}` | 복구 가능한 오류. 연결 유지 |
 
@@ -553,6 +553,16 @@ services:
 
 Docker를 필수로 한 이유: 팀원 누구의 PC에서든 같은 PyTorch·CUDA 조합으로 같은 결과가 나와야 모델 검증 결과를 믿을 수 있다. 나중에 배포하게 되면 이 이미지를 그대로 쓴다.
 
+### 10.1.1 Phase 2 구축 중 확인된 것 (2026-09-07)
+| 항목 | 내용 |
+|---|---|
+| 가중치 호환 | 세 모델 모두 PyTorch 2.4 에서 로드됨. Former-DFER 체크포인트는 학습 스크립트의 `runner_helper.RecorderMeter` 객체를 함께 pickle 해 두어, 로드 시 더미 모듈을 등록해 통과시킴 (`predictors._stub_training_modules`) |
+| 시선 확신도 | 90-bin softmax 최댓값은 정상 입력에서도 0.2~0.3 이라 BE 임계값(0.3)에 걸림 → **상위 3개 bin 확률 합의 평균**으로 정의 변경. 정상 입력에서 0.65~0.82 |
+| 지연 | GPU(RTX 4060) 기준 640px JPEG 1장: 검출 5~9ms + 시선 9~12ms + 감정 3~5ms, 왕복 17~30ms. 3fps 에 여유 큼 |
+| compose env | `env_file` 은 빈 값 줄의 뒤 주석을 값으로 읽음 → `.env` 주석은 별도 줄에 |
+| WSL 포트 | Docker 가 게시한 포트는 WSL `localhost` 로도 열린다. 단, 컨테이너 기동 시 WSL 안에서 그 포트를 다른 프로세스가 쓰고 있으면 WSL 쪽 게시가 빠지므로 `ss -ltn` 으로 확인하고 비운 뒤 `docker compose up -d --force-recreate`. (2026-09-07 다른 프로젝트 Jupyter 커널이 9000 점유 → 종료 후 `localhost:9000` 정상) |
+| 미검증 | 얼굴 크롭 여백 실측(안구 샘플 라벨 `pose.head` 단위 미확인), Former-DFER 인덱스 순서, 감정 모델 정확도 |
+
 ### 10.2 같은 네트워크(LAN)에서 팀원 접속
 목표: 노트북에서 세 서버를 띄우고, 같은 Wi-Fi의 팀원 PC 브라우저가 노트북 IP로 접속해 면접 흐름 전체를 쓴다. 인터넷 공개·TLS·터널 없음.
 
@@ -623,7 +633,7 @@ FE 담당자 확인이 필요한 결정. 답이 없으면 괄호 값으로 진�
 | 5 | WebSocket | `routers/ws.py`, `services/live_session.py` | **완료.** start→프레임→question→end 시나리오, 중복 연결·종료 세션 거부, 잘못된 입력 시 연결 유지 테스트 통과 |
 | 6 | 리포트 | `services/report_service.py`, `routers/reports.py` | **완료 (기본).** 5.6절 구조 전부 생성. 집계값 정밀 검증 테스트는 추가 예정 |
 | 7 | FE 통합 (Mock) | FE와 함께 실제 웹캠 시연 | 토스트·리포트 확인 |
-| 8 | 추론 서버 (Phase 2) | Docker Desktop 설치(선행), `inference/` 프로젝트, Dockerfile + compose, 모델 3개 이식, `/v1/*` | `docker compose up` 후 `/v1/health`가 `cuda`, 샘플 일치 테스트, GPU 추론 시간 측정 |
-| 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | 실제 웹캠으로 토스트·리포트 확인 |
+| 8 | 추론 서버 (Phase 2) | Docker Desktop 설치(선행), `inference/` 프로젝트, Dockerfile + compose, 모델 3개 이식, `/v1/*` | **완료 (2026-09-07).** `/v1/health`가 `cuda`, 샘플 추론 성공, 640px 프레임 기준 왕복 17~27ms. 단위 테스트 7개 |
+| 9 | 실제 연결 (Phase 2) | `HttpInferenceClient`, `INFERENCE_BACKEND=http` | 진행 중. BE `.env` 전환 완료, 실제 웹캠 확인 대기 |
 
 각 작업은 `dev`에서 브랜치를 따 PR로 합친다. 작업 1~3은 서로 독립이라 병렬 가능.

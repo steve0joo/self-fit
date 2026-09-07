@@ -1,0 +1,25 @@
+services:
+  inference:
+    build: .
+    image: selffit-inference:dev
+    ports: ["9000:9000"]
+    env_file: .env
+    volumes:
+      - ./app:/app/app          # 코드 수정 즉시 반영 (--reload)
+      - ./weights:/app/weights  # 가중치는 git 밖, 볼륨으로
+      - ./samples:/app/samples
+      - ./tests:/app/tests    # 컨테이너 안에서 pytest 실행용
+    command: uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

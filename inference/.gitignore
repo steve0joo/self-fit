@@ -1,0 +1,7 @@
+# 가중치·데이터셋 샘플은 git 에 올리지 않는다 (루트 .gitignore 의 *.pth, *.pkl 과 별개로 폴더째 명시)
+weights/*
+!weights/.gitkeep
+samples/**
+!samples/.gitkeep
+.env
+__pycache__/
