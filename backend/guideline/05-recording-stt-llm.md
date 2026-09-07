@@ -92,11 +92,15 @@ videoEl.currentTime = event.ts_ms / 1000;  videoEl.play();
 - 타임라인 이벤트를 클릭하면 그 시각으로 이동. 서버 추가 작업 없음.
 - 녹화 시작이 `start` 보다 1~2초 늦을 수 있어 최대 그 정도 오차가 있습니다. 필요하면 `recording.offset_ms` 를 추가하겠습니다(현재는 0).
 
-## 4. FE 에 부탁하는 순서
-1. 1.1 녹화·업로드 (BE ①이 올라가면 바로 붙일 수 있음. 그 전엔 `chunks` 가 `404`)
-2. 리포트 화면에 `status` 폴링과 "분석 중" 표시
-3. `transcript`, `llm` 렌더링
-4. 영상 플레이어 + 타임라인 클릭 이동
+## 4. FE 에 부탁하는 순서 (2026-09-07 갱신)
+| # | 작업 | 상태 |
+|---|---|---|
+| 1 | 1.1 녹화·업로드 (3초 조각) | **완료** (FE `56f46b7`). 백엔드에서 STT·LLM 까지 실제 동작 확인 |
+| 2 | 1.1.1 마이크 상태 아이콘 | 요청 중 |
+| 3 | 2절 리포트: `status.llm` 이 `done` 될 때까지 3초 재조회 + "답변 분석 중…" → `transcript`, `llm` 렌더링. `overview.frames_analyzed` 가 0 이면 "데이터 없음" | 요청 중 |
+| 4 | 3절 영상 플레이어 + 타임라인 클릭 이동 | 요청 중 |
+
+로컬 확인: `backend/.env` 에 `OPENAI_API_KEY`(비공개 전달), `STT_ENABLED=true`. Docker 없이 `INFERENCE_BACKEND=mock` 이면 STT 는 고정 문장, LLM 은 실제 결과가 옵니다.
 
 ## 5. BE 쪽 구현 메모 (참고)
 - 저장: `backend/media/{session_id}/` 에 조각 저장 후 종료 시 하나로 합침. 배포 안 하므로 로컬 디스크. git 제외.
