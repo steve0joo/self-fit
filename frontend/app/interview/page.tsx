@@ -22,7 +22,7 @@ const TOAST_POOL: { icon: string; message: string }[] = [
   { icon: '😮', message: '당황한 표정이 감지됐어요' },
 ];
 
-const FRAME_PX = 224;
+const FRAME_SHORT_PX = 224;
 const FRAME_INTERVAL_MS = 333;
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT = 3;
@@ -48,6 +48,20 @@ function writeToastPref(value: boolean) {
   } catch (e) {
     console.warn('[interview] 토스트 설정을 저장하지 못했습니다.', e);
   }
+}
+
+function syncCanvasToVideo(video: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
+  const { videoWidth, videoHeight } = video;
+  if (!videoWidth || !videoHeight) return false;
+  const scale = FRAME_SHORT_PX / Math.min(videoWidth, videoHeight);
+  const width = Math.max(1, Math.round(videoWidth * scale));
+  const height = Math.max(1, Math.round(videoHeight * scale));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+    console.log('[interview] frame canvas', canvas.width, '×', canvas.height, `(video ${videoWidth}×${videoHeight})`);
+  }
+  return true;
 }
 
 type ApiQuestion = { id: number; text: string; sort_order: number };
@@ -98,6 +112,12 @@ function InterviewSession() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), TOAST_TTL_MS);
   }, []);
 
+  const handleVideoMetadata = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (video && canvas) syncCanvasToVideo(video, canvas);
+  }, []);
+
   const stopFrames = useCallback(() => {
     if (frameTimerRef.current !== null) {
       clearInterval(frameTimerRef.current);
@@ -113,9 +133,10 @@ function InterviewSession() {
       const ws = wsRef.current;
       if (!video || !canvas || !ws || ws.readyState !== WebSocket.OPEN) return;
       if (video.paused || video.ended || video.readyState < 2) return;
+      if (!syncCanvasToVideo(video, canvas)) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      ctx.drawImage(video, 0, 0, FRAME_PX, FRAME_PX);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(
         (blob) => {
           if (blob && ws.readyState === WebSocket.OPEN) ws.send(blob);
@@ -323,9 +344,9 @@ function InterviewSession() {
         {cameraError ? (
           <div className="video-empty">웹캠 권한이 필요합니다. 브라우저 설정에서 카메라 접근을 허용해주세요.</div>
         ) : (
-          <video ref={videoRef} autoPlay playsInline muted />
+          <video ref={videoRef} autoPlay playsInline muted onLoadedMetadata={handleVideoMetadata} />
         )}
-        <canvas ref={canvasRef} width={FRAME_PX} height={FRAME_PX} style={{ display: 'none' }} />
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
         <div className="video-rec"><span className="dot" />분석 중</div>
         <button className="toast-toggle" type="button" onClick={toggleToast} aria-pressed={toastEnabled}>
           {toastEnabled ? '🔔 알림 켜짐' : '🔕 알림 꺼짐'}
