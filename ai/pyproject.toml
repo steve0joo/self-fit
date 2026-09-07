@@ -2,4 +2,21 @@
 name = "self-fit-ai"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "mediapipe==0.10.21",
+    "numpy<2",
+    "opencv-python<5",
+    "pillow>=12.3.0",
+    "torch>=2.6",
+    "matplotlib>=3.9",
+]
+
+# Step 3 trains on the local RTX 4060; the PyPI torch wheel for Windows is
+# CPU-only, so torch comes from the CUDA index instead.
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
