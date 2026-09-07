@@ -105,6 +105,6 @@ Set A(원본 해상도 크롭 후 degradation), 서비스 prior(neutral .60/anxi
 
 ## 9. 남은 일
 
-- [ ] **Set B 녹화·평가** — 스펙 §6.1의 실제 채택 기준. `scripts/setb.py` 준비됨, 녹화 자체가 아직 불가 확인(2026-09-07). **Set B 실행 시 `checkpoints_step3/`(원래 후보)도 반드시 함께 평가할 것** — Set A/A′에서 seed1이 앞섰다고 Set B에서도 앞선다는 보장은 없다.
+- [ ] **Set B 녹화·평가** — 스펙 §6.1의 실제 채택 기준. `scripts/setb.py` 준비됨. ~~녹화 자체가 아직 불가~~ → **녹화 가능으로 정정 (2026-09-07)**: 웹캠·팀원 모두 확보됐고 사람이 앉기만 하면 된다 (04 §7, §7.1). **Set B 실행 시 `checkpoints_step3/`(원래 후보)도 반드시 함께 평가할 것** — Set A/A′에서 seed1이 앞섰다고 Set B에서도 앞선다는 보장은 없다.
 - [ ] 서비스 prior(§8 가정)를 Set B 실측으로 교체
 - [ ] 모델 선택 기준을 "val anxious recall 최대"에서 "제약(neutral→anxious ≤ 상한) 하의 anxious recall 최대"로 바꾼 뒤 시드 분산 재측정 — seed3 같은 실패 모드를 선택 단계에서 걸러낼 수 있는지 확인
