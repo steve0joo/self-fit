@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     inference_token: str = Field(default="")
     inference_timeout_ms: int = Field(default=1000)
 
+    # 녹화 (guideline/05). 조각·합친 영상 저장 위치. git 제외
+    media_dir: str = Field(default="./media")
+    recording_grace_seconds: float = Field(
+        default=5.0, description="세션 종료 후 이 시간까지 도착한 조각은 허용"
+    )
+    recording_max_chunk_bytes: int = Field(default=5_000_000)
+
+    # STT / LLM (guideline/05). 구현 전까지 리포트 status 는 skipped
+    stt_enabled: bool = Field(default=False)
+    openai_api_key: str = Field(default="")
+    openai_model: str = Field(default="gpt-4o-mini")
+
     # 이벤트 판정 임계값 (03-phase1-design.md 8절)
     gaze_yaw_threshold_deg: float = 20.0
     gaze_pitch_threshold_deg: float = 15.0

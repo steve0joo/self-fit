@@ -8,6 +8,7 @@ os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon")
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 os.environ["INFERENCE_BACKEND"] = "mock"
 os.environ["APP_ENV"] = "test"
+os.environ["MEDIA_DIR"] = "./test_media"
 
 import pytest
 from fastapi import Request
@@ -23,9 +24,13 @@ OTHER_USER = CurrentUser(id=str(uuid.uuid4()), email="other@example.com", role="
 
 @pytest.fixture(autouse=True)
 def fresh_db():
+    import shutil
+
     dbmod.Base.metadata.drop_all(dbmod.engine)
     init_sqlite_dev_db()
+    shutil.rmtree("./test_media", ignore_errors=True)
     yield
+    shutil.rmtree("./test_media", ignore_errors=True)
 
 
 USERS = {"main": TEST_USER, "other": OTHER_USER}

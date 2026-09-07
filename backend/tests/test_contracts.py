@@ -15,6 +15,11 @@ REPORT_KEYS = {
     "per_question",
     "timeline",
     "feedback",
+    # guideline/05 (2026-09-07 추가)
+    "status",
+    "recording",
+    "transcript",
+    "llm",
 }
 OVERVIEW_KEYS = {"gaze_hold_rate", "stable_emotion_rate", "attention_rate", "face_found_rate", "event_count"}
 PER_Q_KEYS = {
@@ -78,6 +83,8 @@ def test_report_contract_after_live_session(client, auth_ws):
 
     rep = client.get(f"/api/sessions/{sid}/report").json()
     assert set(rep) == REPORT_KEYS
+    assert set(rep["status"]) == {"metrics", "recording", "stt", "llm"}
+    assert all(v in ("pending", "running", "done", "failed", "skipped") for v in rep["status"].values())
     assert set(rep["overview"]) == OVERVIEW_KEYS
     assert all(0.0 <= v <= 1.0 for k, v in rep["overview"].items() if k != "event_count")
     assert set(rep["emotion_distribution"]) == EMOTION_USED | {EMOTION_OTHER}
