@@ -58,6 +58,17 @@ class MockInferenceClient:
             timing_ms={"mock": 0},
         )
 
+    async def transcribe(self, audio: bytes, language: str = "ko") -> dict:
+        # 오디오 길이와 무관하게 고정 문장. 리포트 흐름 검증용
+        text = "네, 저는 문제를 구조적으로 나누어 해결하는 편이고 팀과 소통하며 일하는 것을 좋아합니다."
+        return {
+            "text": text,
+            "segments": [{"start_ms": 0, "end_ms": 4000, "text": text}],
+            "language": language,
+            "duration_ms": 5000,
+            "speech_ms": 4000,
+        }
+
     async def health(self) -> dict:
         return {"status": "ok", "device": "mock", "models": {}}
 

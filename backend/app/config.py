@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # STT / LLM (guideline/05). 구현 전까지 리포트 status 는 skipped
     stt_enabled: bool = Field(default=False)
+    stt_language: str = Field(default="ko")
     openai_api_key: str = Field(default="")
     openai_model: str = Field(default="gpt-4o-mini")
 

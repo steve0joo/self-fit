@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     attention_reset_s: float = 3.0  # 얼굴이 이 시간 이상 없으면 버퍼 초기화
     session_ttl_s: float = 600.0  # 미사용 세션 버퍼 정리
 
+    # STT (faster-whisper). 팀 결정: small, 한국어
+    stt_model: str = Field(default="small", description="tiny | base | small | medium")
+    stt_language: str = Field(default="ko")
+    stt_max_audio_bytes: int = Field(default=50_000_000)
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -12,6 +12,7 @@ from app.attention_buffer import AttentionBuffer
 from app.config import get_settings
 from app.detector import FaceDetector
 from app.routers import infer
+from app.stt import SttModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("inference")
@@ -31,8 +32,9 @@ async def lifespan(app: FastAPI):
     app.state.detector = FaceDetector()
     app.state.attention_buffer = AttentionBuffer(s.attention_window, s.attention_interval_s, s.attention_reset_s, s.session_ttl_s)
     predictors.warmup(app.state.gaze, app.state.emotion, app.state.attention, s.gaze_input_size)
+    app.state.stt = SttModel(s.stt_model, device, s.stt_language)
     app.state.models_loaded = True
-    log.info("models loaded on %s: gaze=%s emotion=%s attention=%s", device, app.state.gaze.name, app.state.emotion.name, app.state.attention.name)
+    log.info("models loaded on %s: gaze=%s emotion=%s attention=%s stt=%s", device, app.state.gaze.name, app.state.emotion.name, app.state.attention.name, app.state.stt.name)
     yield
     app.state.detector.close()
 

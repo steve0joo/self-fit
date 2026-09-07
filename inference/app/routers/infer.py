@@ -4,6 +4,7 @@ from typing import Annotated
 import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 
 from app import preprocess as pp
 from app.auth import require_token
@@ -23,7 +24,7 @@ def health(request: Request, settings: Annotated[Settings, Depends(get_settings)
     return {
         "status": "ok",
         "device": settings.device,
-        "models": {"gaze": st.gaze.name, "emotion": st.emotion.name, "attention": st.attention.name},
+        "models": {"gaze": st.gaze.name, "emotion": st.emotion.name, "attention": st.attention.name, "stt": getattr(getattr(st, "stt", None), "name", None)},
     }
 
 
@@ -72,3 +73,23 @@ async def analyze(request: Request, session_id: str = Query(..., min_length=1), 
         attention=None if att_last is None else ProbsOut(probs=att_last, top=top_of(att_last)),
         timing_ms=timing,
     )
+
+
+@router.post("/transcribe", dependencies=[Depends(require_token)])
+async def transcribe(request: Request, language: str | None = Query(None), settings: Settings = Depends(get_settings)):
+    """오디오(webm/wav/mp3, ffmpeg 가 읽는 형식) → {text, segments[], duration_ms, speech_ms}. guideline/05 STT."""
+    st = request.app.state
+    if not getattr(st, "stt", None):
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "STT 모델이 로드되지 않았습니다.")
+    body = await request.body()
+    if not body:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "오디오가 비어 있습니다.")
+    if len(body) > settings.stt_max_audio_bytes:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "오디오가 너무 큽니다. 질문 구간별로 나눠 보내세요.")
+    t = time.perf_counter()
+    try:
+        result = await run_in_threadpool(st.stt.transcribe, body, language)
+    except Exception as e:  # noqa: BLE001 - 디코딩 실패 등은 400 으로
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"오디오를 처리할 수 없습니다: {e!s}"[:200]) from e
+    result["timing_ms"] = int((time.perf_counter() - t) * 1000)
+    return result

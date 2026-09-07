@@ -8,6 +8,10 @@ from app.analysis.types import FrameResult
 class InferenceClient(Protocol):
     async def analyze(self, session_id: str, jpeg: bytes, ts_ms: int) -> FrameResult: ...
 
+    async def transcribe(
+        self, audio: bytes, language: str = "ko"
+    ) -> dict: ...  # {text, segments, duration_ms, speech_ms}
+
     async def health(self) -> dict: ...
 
     async def close(self) -> None: ...

@@ -47,6 +47,28 @@ class HttpInferenceClient:
             raise InferenceError(f"inference rejected: {r.status_code} {r.text[:120]}")
         return parse_analyze(r.json(), ts_ms)
 
+    async def transcribe(self, audio: bytes, language: str = "ko") -> dict:
+        try:
+            r = await self._client.post(
+                "/v1/transcribe",
+                params={"language": language},
+                content=audio,
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=httpx.Timeout(300.0),  # 긴 오디오 허용
+            )
+        except httpx.HTTPError as e:
+            raise InferenceError(f"transcribe request failed: {e!r}") from e
+        if r.status_code != 200:
+            raise InferenceError(f"transcribe rejected: {r.status_code} {r.text[:120]}")
+        d = r.json()
+        return {
+            "text": d.get("text", ""),
+            "segments": d.get("segments", []),
+            "language": d.get("language"),
+            "duration_ms": d.get("duration_ms", 0),
+            "speech_ms": d.get("speech_ms", 0),
+        }
+
     async def health(self) -> dict:
         r = await self._client.get("/v1/health")
         r.raise_for_status()
