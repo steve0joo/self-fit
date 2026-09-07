@@ -6,7 +6,7 @@
 
 ## 0. 한눈에
 ```
-면접 중   FE: MediaRecorder(오디오+비디오 webm) → 5초마다 조각 업로드  POST /recording/chunks
+면접 중   FE: MediaRecorder(오디오+비디오 webm) → 3초마다 조각 업로드  POST /recording/chunks
 종료(end) BE: 조각 합치기 → 수치 리포트 즉시 생성(지금과 동일) → 백그라운드로 STT → LLM
 리포트    FE: GET /report 를 3초마다 다시 조회, status 가 done 이 될 때까지. 영상은 GET /recording 으로 재생
 ```
@@ -27,11 +27,11 @@ rec.ondataavailable = async (e) => {
   fd.append('chunk', e.data, `${seq}.webm`);
   await apiFetchRaw(`/api/sessions/${sessionId}/recording/chunks?seq=${seq++}`, { method: 'POST', body: fd });
 };
-rec.start(5000);                                   // 5초마다 ondataavailable
+rec.start(3000);                                   // 3초마다 ondataavailable
 // 면접 종료(end 보내기 직전): rec.stop()  → 마지막 조각까지 업로드된 뒤 end 전송
 ```
 - `mimeType` 은 Chrome/Edge 기준. 지원 안 하면 `MediaRecorder.isTypeSupported` 로 `video/webm` 폴백.
-- 비트레이트 800kbps → 5분에 약 30MB. 조각 하나 약 500KB.
+- 비트레이트 800kbps → 5분에 약 30MB. 조각 하나 약 300KB (3초).
 - `apiFetchRaw` 는 기존 `apiFetch` 에서 `Content-Type: application/json` 을 빼고 FormData 를 그대로 보내는 버전. (JSON 헤더를 붙이면 multipart 가 깨집니다.)
 - **마이크 권한 거부 시**: 영상만 녹화(`audio: false`)하고 계속 진행. STT 는 비어 있는 채로 리포트가 나옵니다.
 - 재연결(`resume`) 시 `seq` 는 이어서 증가시키면 됩니다. 서버가 순서대로 붙입니다.
@@ -42,7 +42,7 @@ rec.start(5000);                                   // 5초마다 ondataavailable
 | POST | `/api/sessions/{id}/recording/chunks?seq=N` | multipart `chunk` (webm 조각) | `204`. 같은 seq 재전송은 덮어씀(멱등) |
 | GET | `/api/sessions/{id}/recording` | | webm 스트리밍 (`Range` 지원, `<video src>` 에 바로 사용). 없으면 `404` |
 
-조각은 세션 상태가 `running` 일 때만 받습니다. 종료 후 5초 안에 도착한 마지막 조각까지는 허용합니다.
+조각은 세션 상태가 `running` 일 때만 받습니다. 종료 후 5초 안에 도착한 마지막 조각까지는 허용합니다 (조각 간격 3초보다 길게 잡은 유예).
 
 ## 2. 리포트 확장 (FE 작업 작음)
 
