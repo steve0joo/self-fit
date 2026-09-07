@@ -10,7 +10,7 @@ from app import preprocess as pp
 from app.auth import require_token
 from app.config import Settings, get_settings
 from app.predictors import top_of
-from app.schemas import AnalyzeOut, FaceOut, GazeOut, ProbsOut
+from app.schemas import AnalyzeOut, EmotionOut, FaceOut, GazeOut, ProbsOut
 
 router = APIRouter(prefix="/v1", tags=["inference"])
 
@@ -54,7 +54,7 @@ async def analyze(request: Request, session_id: str = Query(..., min_length=1), 
 
     t = time.perf_counter()
     face_tight = pp.crop(bgr, face, 0.0)
-    emo = st.emotion.predict(pp.emotion_tensor(face_tight))
+    emo, emo_top, emo_ok, emo_conf = st.emotion.predict(pp.emotion_tensor(face_tight, settings.emotion_resize))
     timing["emotion"] = int((time.perf_counter() - t) * 1000)
 
     t = time.perf_counter()
@@ -69,7 +69,7 @@ async def analyze(request: Request, session_id: str = Query(..., min_length=1), 
         face_found=True,
         face=FaceOut(x=face.x, y=face.y, w=face.w, h=face.h, score=round(face.score, 3)),
         gaze=GazeOut(yaw_deg=round(yaw, 2), pitch_deg=round(pitch, 2), confidence=round(conf, 3)),
-        emotion=ProbsOut(probs=emo, top=top_of(emo)),
+        emotion=EmotionOut(probs=emo, top=emo_top, accepted=emo_ok, confidence=round(emo_conf, 4)),
         attention=None if att_last is None else ProbsOut(probs=att_last, top=top_of(att_last)),
         timing_ms=timing,
     )

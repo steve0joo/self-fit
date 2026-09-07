@@ -14,8 +14,7 @@ from app.models.l2cs_net import L2CS
 
 log = logging.getLogger("inference.models")
 
-# 클래스 순서 (03-for-ai.md). 감정은 원본 7클래스, 집중은 AI-Hub 표기 순 가정
-EMOTION_LABELS = ["기쁨", "당황", "분노", "불안", "상처", "슬픔", "중립"]
+# 클래스 순서: 감정은 config.emotion_labels(납품 meta.json), 집중은 AI-Hub 표기 순 가정
 ATTENTION_LABELS = ["집중", "졸림", "집중결핍", "집중하락", "태만"]
 
 
@@ -72,20 +71,30 @@ class GazeModel:
 
 
 class EmotionModel:
-    """EmotionNet 7클래스. 출력이 log_softmax 이므로 exp 로 확률화 (원본 video.py 와 동일)."""
+    """EmotionNet. 출력이 log_softmax 이므로 (bias 더한 뒤) softmax. AI 팀 납품 계약(meta.json):
+    adjusted = model(x) + bias; prob = softmax(adjusted); pred = argmax(prob); accept = prob.max() >= tau"""
 
-    name = "emotionnet_v1"
-
-    def __init__(self, weights: Path, device: str):
+    def __init__(self, weights: Path, device: str, labels: list[str], bias: list[float] | None, tau: float):
         self.device = device
-        self.model = EmotionNet(num_classes=7)
+        self.labels = labels
+        self.tau = tau
+        self.name = weights.stem
+        self.model = EmotionNet(num_classes=len(labels))
         self.model.load_state_dict(_load(weights)["model"])
         self.model.eval().to(device)
+        b = bias if bias else [0.0] * len(labels)
+        if len(b) != len(labels):
+            raise ValueError(f"emotion bias 길이 {len(b)} != 클래스 수 {len(labels)}")
+        self.bias = torch.tensor(b, dtype=torch.float32, device=device)
 
     @torch.inference_mode()
-    def predict(self, x: torch.Tensor) -> dict[str, float]:
-        out = torch.exp(self.model(x.to(self.device)))[0].cpu().numpy()
-        return {lab: round(float(p), 4) for lab, p in zip(EMOTION_LABELS, out, strict=True)}
+    def predict(self, x: torch.Tensor) -> tuple[dict[str, float], str, bool, float]:
+        logp = self.model(x.to(self.device))[0] + self.bias
+        prob = F.softmax(logp, dim=0).cpu().numpy()
+        probs = {lab: round(float(p), 4) for lab, p in zip(self.labels, prob, strict=True)}
+        top = self.labels[int(prob.argmax())]
+        conf = float(prob.max())
+        return probs, top, conf >= self.tau, conf
 
 
 class AttentionModel:
@@ -111,7 +120,7 @@ def top_of(probs: dict[str, float]) -> str:
     return max(probs, key=probs.get)
 
 
-def warmup(gaze: GazeModel, emotion: EmotionModel, attention: AttentionModel, gaze_size: int) -> None:
+def warmup(gaze: GazeModel, emotion: EmotionModel, attention: AttentionModel, gaze_size: int) -> None:  # noqa: D103
     """첫 요청 지연을 없애기 위해 더미 입력으로 1회 실행."""
     gaze.predict(torch.zeros(1, 3, gaze_size, gaze_size))
     emotion.predict(torch.zeros(1, 1, 48, 48))
