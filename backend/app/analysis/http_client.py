@@ -3,6 +3,7 @@
 import httpx
 
 from app.analysis.types import (
+    EMOTION_UNCERTAIN,
     AttentionResult,
     EmotionResult,
     FaceBox,
@@ -78,6 +79,14 @@ class HttpInferenceClient:
         await self._client.aclose()
 
 
+def _emotion(e: dict) -> EmotionResult:
+    accepted = bool(e.get("accepted", True))
+    top = emotion_top_from_probs(e["probs"]) if accepted else EMOTION_UNCERTAIN
+    return EmotionResult(
+        probs=dict(e["probs"]), top=top, accepted=accepted, confidence=float(e.get("confidence", 1.0))
+    )
+
+
 def parse_analyze(d: dict, ts_ms: int) -> FrameResult:
     """5.5절 응답 JSON → FrameResult. 필수 키가 없으면 InferenceError."""
     try:
@@ -90,7 +99,7 @@ def parse_analyze(d: dict, ts_ms: int) -> FrameResult:
             face_found=True,
             face=FaceBox(int(f["x"]), int(f["y"]), int(f["w"]), int(f["h"]), float(f.get("score", 1.0))),
             gaze=GazeResult(float(g["yaw_deg"]), float(g["pitch_deg"]), float(g.get("confidence", 1.0))),
-            emotion=EmotionResult(probs=dict(e["probs"]), top=emotion_top_from_probs(e["probs"])),
+            emotion=_emotion(e),
             attention=None if att is None else AttentionResult(probs=dict(att["probs"]), top=str(att["top"])),
             timing_ms=d.get("timing_ms", {}),
         )

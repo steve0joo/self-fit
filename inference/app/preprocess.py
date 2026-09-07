@@ -30,10 +30,11 @@ def gaze_tensor(bgr_face: np.ndarray, size: int) -> torch.Tensor:
     return torch.from_numpy(x).permute(2, 0, 1).unsqueeze(0)
 
 
-def emotion_tensor(bgr_face: np.ndarray) -> torch.Tensor:
-    """EmotionNet: 흑백, 48×48 INTER_AREA, /255 → (1,1,48,48). 원본 video.py 와 동일."""
+def emotion_tensor(bgr_face: np.ndarray, resize: str = "linear") -> torch.Tensor:
+    """EmotionNet: 흑백, 48×48, /255 → (1,1,48,48).
+    resize='linear' 는 납품 v2 학습(Resize((48,48)) bilinear 늘림)과 동일, 'area' 는 원본 video.py."""
     gray = cv2.cvtColor(bgr_face, cv2.COLOR_BGR2GRAY)
-    roi = cv2.resize(gray, (48, 48), interpolation=cv2.INTER_AREA)
+    roi = cv2.resize(gray, (48, 48), interpolation=cv2.INTER_LINEAR if resize == "linear" else cv2.INTER_AREA)
     return torch.from_numpy(roi.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0)
 
 

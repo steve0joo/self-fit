@@ -436,7 +436,7 @@ class InferenceClient(Protocol):
 |---|---|
 | `MediaPipeFaceDetector` | short-range 모델. 가장 큰 얼굴 1개. 박스는 정사각형으로 보정 |
 | `L2CSGaze` | 얼굴 박스에 **20% 여백**(7.1절) → RGB → 448×448 → ImageNet 정규화 → 90-bin softmax 기대값 ×4−180. GPU라 224 축소 불필요 |
-| `EmotionNet` | 얼굴 박스 **여백 없음** → 흑백 → 48×48 INTER_AREA → /255 → log-softmax → exp. `torch.load(...)['model']`. 확률 7개를 **그대로** 반환. 4종 판정은 BE 몫 |
+| `EmotionNet` v2 | 얼굴 박스 **여백 없음** → 흑백 → 48×48 **bilinear 늘림** → /255 → log-softmax **+ bias[0,1.4,0,1.9]** → softmax → `accepted = max ≥ τ(0.98)`. 4클래스 [기쁨, 당황, 불안, 중립]. `inference/.env` 로 v1(7클래스) 복귀 가능 |
 | `FormerDFER` | `session_id`별 버퍼의 112×112 크롭 16장 각각 RGB → /255 → `(1,16,3,112,112)` → fc(512,5) logit → softmax. `state_dict`의 `module.` 접두사 제거 후 로드. 얼굴이 3초 이상 없으면 버퍼 초기화 |
 
 모델 로드는 lifespan에서 1회, `DEVICE=cuda|cpu` 설정. 세 모델 합계 GPU 메모리 약 1GB.

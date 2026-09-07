@@ -60,7 +60,7 @@ class RuleEngine:
         neg = sur = low = False
         payload_e: dict = {}
         payload_a: dict = {}
-        if r.face_found and r.emotion:
+        if r.face_found and r.emotion and r.emotion.accepted:  # τ 미달(불확실) 프레임은 감정 판정에 쓰지 않음
             p = r.emotion.probs.get(r.emotion.top, 0.0)
             neg = r.emotion.top == "불안" and p >= s.emotion_negative_min_prob
             sur = r.emotion.top == "당황" and p >= s.emotion_surprised_min_prob

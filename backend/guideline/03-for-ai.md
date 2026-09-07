@@ -22,9 +22,9 @@ BE (localhost:8000) ──HTTP: JPEG 1장──▶ 추론 서버 (localhost:9000
 
 | | 시선 L2CS-Net | 감정 EmotionNet (파인튜닝 전 기준) | 집중 Former-DFER |
 |---|---|---|---|
-| 가중치 | `l2cs_trained.pkl` 96MB | `model.pth` 57MB | `former_trained.pth` 144MB |
+| 가중치 | `l2cs_trained.pkl` 96MB | `emotionnet_v2.pth` 19MB (AI 팀 납품, `ai/models/deliverable/meta.json`) | `former_trained.pth` 144MB |
 | 입력 | 얼굴 크롭, 448×448 RGB, ImageNet 정규화 | 얼굴 크롭, 48×48 흑백, 0~1 | 얼굴 크롭 16장, 112×112 RGB, 0~1 |
-| 출력 | yaw, pitch 각도 | 원본 7클래스 (기쁨 당황 분노 불안 상처 슬픔 중립 순) → **서비스는 4클래스만: 중립, 불안, 당황, 기쁨** | 5클래스 |
+| 출력 | yaw, pitch 각도 | **납품 v2: 4클래스 [기쁨, 당황, 불안, 중립]**, LogSoftmax. 바이어스 `[0,1.4,0,1.9]` 후 softmax, τ 0.98 미달은 "불확실" | 5클래스 |
 | 얼굴 크롭 여백 | 박스 + 20% **(가정)** | 없음 | 없음 **(가정)** |
 
 근거의 강도:

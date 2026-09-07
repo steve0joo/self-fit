@@ -79,6 +79,7 @@ rec.start(3000);                                   // 3초마다 ondataavailable
 |---|---|---|
 | `status.*` | `pending` \| `running` \| `done` \| `failed` \| `skipped` | 하나라도 `pending`/`running` 이면 **3초 후 다시 GET**. `skipped` 는 마이크 없음 등으로 건너뜀 |
 | `transcript` | STT 완료 전엔 `[]` | 질문별 답변 텍스트 표시 |
+| `emotion_distribution` | 키가 **기쁨, 당황, 불안, 중립** 4개로 확정 (2026-09-07 감정 모델 v2). "기타" 키는 더 이상 오지 않음. 값은 판정이 채택된 프레임 기준 비율(합 1) |
 | `llm` | 완료 전엔 `null` | 총평·질문별 피드백·강점·개선점 표시. 기존 규칙 기반 `feedback` 은 그대로 남아 있으니 `llm` 이 `null` 일 때의 대체로 사용 |
 | `recording` | 녹화 없으면 `null` | 영상 플레이어 `src`. `status.recording` 이 `done` 이어야 재생 가능 |
 
