@@ -1,0 +1,6 @@
+# AI 파트 전용. 공통 규칙은 루트 .gitignore 참고.
+
+# 원본 가중치(AI-Hub model.pth)와 학습 산출물 — 용량이 크고 재생성 가능하다.
+# 납품 대상 파일은 GitHub Release나 Drive로 전달한다(backend/guideline/03-for-ai.md §5).
+weights/
+artifacts/
